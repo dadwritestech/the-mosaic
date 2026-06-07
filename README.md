@@ -119,6 +119,22 @@ Full-fidelity owned Pokémon (stats validated vs `@smogon/calc`); HP/status pers
 between battles; save policy is anywhere (normal/hard) or Centers-only (hardest);
 Nuzlocke is an independent toggle enforced via `rules.ts` hooks.
 
+## Economy (sub-project 3b)
+
+```ts
+import { applyItem } from './src/game/items/effects';
+import { buyItem } from './src/game/shop';
+import { healParty } from './src/game/center';
+
+let r = buyItem(game, mart, 'ultraball', 5);   // shop
+r = { state: healParty(r.state), result: { ok: true } }; // Pokémon Center
+const used = applyItem(r.state, 'thunderstone', pikachuUid); // evolves -> Raichu
+```
+
+Full item roster with a data-driven effect engine; evolution (level + stone) and TM
+teaching from Showdown data; shops with badge-gated stock + difficulty pricing.
+Repel/Escape-Rope set state flags the overworld will honor (sub-project 4).
+
 ## Commands
 
 ```bash
