@@ -153,6 +153,21 @@ EXP scales to the opponent (Gen-5 formula); Exp Share is difficulty-dependent;
 level-ups surface move-learn/evolution decisions; HP/status persist in and out of
 battle via the Bridge's `initialConditions` / `finalConditions`.
 
+## Time & Rematch (sub-project 3d)
+
+```ts
+import { advanceStep, currentDay, timeOfDay } from './src/game/clock';
+import { recordTrainerDefeat, listReadyRematches, rematchLevelCap } from './src/game/rematch';
+
+game = advanceStep(game);                       // overworld step advances the clock
+game = recordTrainerDefeat(game, 'gymSteel');   // on a won trainer battle (1-day cooldown)
+const ready = listReadyRematches(game);         // Vs-Seeker list, after the cooldown
+const cap = rematchLevelCap(game);              // -> Team Composer levelCap for the rematch
+```
+
+Deterministic step-based clock with a `timeOfDay` hook for day/night encounters;
+player-initiated rematches scale to progress (capped at 75).
+
 ## Commands
 
 ```bash
