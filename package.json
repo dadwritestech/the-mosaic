@@ -7,7 +7,10 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "dev": "vite",
+    "build:web": "vite build",
+    "preview": "vite preview"
   },
   "license": "ISC",
   "dependencies": {
@@ -16,7 +19,10 @@
   },
   "devDependencies": {
     "@types/node": "^25.9.2",
+    "@types/three": "^0.184.1",
+    "three": "^0.184.0",
     "typescript": "^6.0.3",
+    "vite": "^8.0.16",
     "vitest": "^4.1.8"
   }
 }

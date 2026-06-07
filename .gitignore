@@ -5,3 +5,7 @@ dist/
 _spike*.cjs
 
 .superpowers/
+dist-web/
+_vite.log
+.playwright-mcp/
+t*-*.png
