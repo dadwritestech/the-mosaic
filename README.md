@@ -97,6 +97,28 @@ Every drafted mon's typing includes the gym type (dual-types allowed); movesets 
 from real legal movepools, tier-scaled; `counterDraftStrength` (from the difficulty
 controller) biases toward stronger mons. Deterministic under a seed.
 
+## Game State (sub-project 3a — core + save)
+
+```ts
+import { createNewGame, addToParty } from './src/game/game-state';
+import { createOwned } from './src/game/owned-pokemon';
+import { serialize, deserialize, InMemorySaveStore } from './src/game/save';
+import { ownedToSet } from './src/game/projection';
+
+let game = createNewGame({ difficultyMode: 'hard', nuzlocke: false });
+game = addToParty(game, createOwned({ species: 'Pikachu', level: 5, moves: ['thunderbolt'] }));
+
+const store = new InMemorySaveStore();
+await store.save('slot1', serialize(game));       // persist
+const loaded = deserialize((await store.load('slot1'))!);
+
+const battleTeam = loaded.party.map(ownedToSet);  // -> Battle Bridge
+```
+
+Full-fidelity owned Pokémon (stats validated vs `@smogon/calc`); HP/status persist
+between battles; save policy is anywhere (normal/hard) or Centers-only (hardest);
+Nuzlocke is an independent toggle enforced via `rules.ts` hooks.
+
 ## Commands
 
 ```bash
