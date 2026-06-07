@@ -20,8 +20,9 @@ import { baseCatchRate } from '../data/catch-rates';
  *    next |turn| or |win| is seen; submitTurn resolves on that boundary.
  *  - Catching is synthetic: it never touches Showdown (the sim has no Poke Balls).
  *
- * Scope: built for single-active singles battles. Mid-battle forceSwitch (multi-mon
- * replacement) is recognized but not yet driven — added when multi-mon teams land.
+ * Scope: built for singles. Mid-battle forceSwitch (multi-mon replacement after a
+ * faint) is auto-resolved with `default` so scripted/AI play continues; explicit
+ * player-driven switch selection during a forced switch arrives with the UI later.
  */
 export class BattleBridge {
   private stream: any;
@@ -75,7 +76,8 @@ export class BattleBridge {
           const req = JSON.parse(json);
           if (req.wait) { this.latestRequest[side] = null; continue; }
           if (req.teamPreview) { void s.write('default'); continue; }
-          this.latestRequest[side] = req; // active or forceSwitch
+          if (req.forceSwitch) { void s.write('default'); this.latestRequest[side] = null; continue; }
+          this.latestRequest[side] = req; // active move request
         }
       }
     })();

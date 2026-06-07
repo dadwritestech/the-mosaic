@@ -81,6 +81,22 @@ const settings = computeSettings({
 // are gated to ~0 until the player has earned a reputation (the immersion guardrail).
 ```
 
+## AI Brain (sub-project 2c — team composer)
+
+```ts
+import { composeTeam } from './src/ai/team-composer';
+import { makeRng } from './src/ai/rng';
+
+const gymTeam = composeTeam(
+  { baseTier: 'hard', teamSize: 6, levelCap: 50, gymType: 'Steel' },
+  { gen: 9, counterDraftStrength: 0.7, rng: makeRng(seed) },
+); // -> TeamSpec for the Battle Bridge
+```
+
+Every drafted mon's typing includes the gym type (dual-types allowed); movesets come
+from real legal movepools, tier-scaled; `counterDraftStrength` (from the difficulty
+controller) biases toward stronger mons. Deterministic under a seed.
+
 ## Commands
 
 ```bash
