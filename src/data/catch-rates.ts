@@ -5,6 +5,7 @@ export const CATCH_RATES: Record<string, number> = {
   caterpie: 255,
   gyarados: 45,
   mewtwo: 3,
+  pidgey: 255, rattata: 255, hoothoot: 255,
 };
 
 export function baseCatchRate(speciesId: string): number {

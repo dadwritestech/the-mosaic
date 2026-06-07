@@ -27,6 +27,7 @@ const GROUPS: Record<string, GrowthGroup> = {
   bulbasaur: 'mediumslow', charmander: 'mediumslow', squirtle: 'mediumslow',
   pikachu: 'mediumfast', gyarados: 'slow', magikarp: 'slow', garchomp: 'slow',
   caterpie: 'mediumfast', snorlax: 'slow',
+  pidgey: 'mediumslow', rattata: 'mediumfast', hoothoot: 'mediumfast',
 };
 
 export function growthRateOf(species: string): GrowthGroup {
