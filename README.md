@@ -175,7 +175,27 @@ caps 12→52), connecting routes with biome-appropriate encounter tables (the Co
 Tide), trainers, shops, and NPCs — 18 locations in one connected map. Factual species
 data (catch/exp/growth/EV for all 1025 species) is generated from PokéAPI by
 `scripts/gen-data.mjs`; region content is validated by `region-integrity.test.ts`.
-Elite Four / Champion / story climax are sub-project 4c.
+
+## Endgame (sub-project 4c — game logic complete)
+
+```ts
+import { startSequence, recordBattle, carryConditions } from './src/game/battle-sequence';
+import { nextBeat, resolveBeat, meterTier } from './src/game/story';
+import { availableEndings, applyEnding } from './src/game/ending';
+import { ELITE_FOUR, CHAMPION } from './src/content/elite/index';
+
+let seq = startSequence([...ELITE_FOUR, CHAMPION], { itemsAllowed: difficulty !== 'hardest' });
+// drive each battle via the Bridge using carryConditions(party) as initialConditions...
+const endings = availableEndings(state);            // gated by the stabilize meter
+const { state: ended } = applyEnding(state, choice); // reset wipes your convergence-born team
+```
+
+A no-heal battle-sequence gauntlet (Vriska's 3 rooms / Elite Four / the Warden's
+6 legendaries), a stabilize meter driven by 5 faction story beats, and the
+Reset/Embrace/Balance ending. **This completes the entire game logic** — every system
+(battles, adaptive AI, full-fidelity Pokémon, economy, progression, the full region,
+and the endgame) is built and tested headlessly. Only presentation (sub-project 5,
+the Three.js front-end) remains.
 
 ## Commands
 
