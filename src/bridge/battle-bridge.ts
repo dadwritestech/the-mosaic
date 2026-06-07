@@ -62,6 +62,7 @@ export class BattleBridge {
     );
 
     await this.waitForTurnBoundary(); // resolves on |turn|1
+    this.injectConditions(opts.initialConditions);
     return this._state;
   }
 
@@ -151,6 +152,42 @@ export class BattleBridge {
     const result = rollCatch(chance);
     if (result.caught) this._state.winner = 'p1'; // capture ends the battle
     return result;
+  }
+
+  private injectConditions(conds?: { p1?: import('./types').MonCondition[]; p2?: import('./types').MonCondition[] }): void {
+    if (!conds) return;
+    const battle = (this.stream as any).battle;
+    if (!battle) return;
+    const statusMap: Record<string, string> = { par: 'paralysis', brn: 'burn', psn: 'poison', tox: 'toxic', slp: 'sleep', frz: 'freeze' };
+    const apply = (sideIdx: number, list?: import('./types').MonCondition[]) => {
+      if (!list) return;
+      const mons = battle.sides[sideIdx].pokemon;
+      list.forEach((c, i) => {
+        const p = mons[i]; if (!p) return;
+        if (typeof c.hpPercent === 'number') p.sethp(Math.max(1, Math.round((c.hpPercent / 100) * p.maxhp)));
+        if (c.status) p.setStatus(statusMap[c.status] ?? c.status);
+      });
+    };
+    apply(0, conds.p1); apply(1, conds.p2);
+  }
+
+  private normalizeStatus(raw: string): string {
+    const map: Record<string, string> = { paralysis: 'par', burn: 'brn', poison: 'psn', toxic: 'tox', sleep: 'slp', freeze: 'frz' };
+    return map[raw] ?? raw;
+  }
+
+  finalConditions(): { p1: import('./types').MonReadout[]; p2: import('./types').MonReadout[] } {
+    const battle = (this.stream as any).battle;
+    const read = (sideIdx: number): import('./types').MonReadout[] => {
+      if (!battle) return [];
+      return battle.sides[sideIdx].pokemon.map((p: any) => ({
+        species: p.species?.name ?? p.name,
+        hpPercent: p.maxhp ? Math.round((p.hp / p.maxhp) * 100) : 0,
+        status: this.normalizeStatus(p.status ?? ''),
+        fainted: !!p.fainted,
+      }));
+    };
+    return { p1: read(0), p2: read(1) };
   }
 
   private applyEvent(ev: BattleEvent): void {

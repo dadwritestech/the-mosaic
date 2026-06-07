@@ -10,7 +10,9 @@ export interface PokemonSet {
 }
 export type TeamSpec = PokemonSet[];
 
-export interface BattleOpts { formatid?: string; seed?: number[]; isWild?: boolean; }
+export interface MonCondition { hpPercent: number; status: string; }
+export interface MonReadout { species: string; hpPercent: number; status: string; fainted: boolean; }
+export interface BattleOpts { formatid?: string; seed?: number[]; isWild?: boolean; initialConditions?: { p1?: MonCondition[]; p2?: MonCondition[] }; }
 
 export type Action =
   | { kind: 'move'; index: number }

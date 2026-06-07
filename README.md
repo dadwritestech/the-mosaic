@@ -135,6 +135,24 @@ Full item roster with a data-driven effect engine; evolution (level + stone) and
 teaching from Showdown data; shops with badge-gated stock + difficulty pricing.
 Repel/Escape-Rope set state flags the overworld will honor (sub-project 4).
 
+## Rewards & Leveling (sub-project 3c)
+
+```ts
+import { applyBattleResult } from './src/game/battle-result';
+
+const fc = bridge.finalConditions();           // read end HP/status from the battle
+const { state, summary } = applyBattleResult(game, {
+  won: bridge.state.winner === 'p1',
+  finalConditions: myParty.map((m, i) => ({ uid: m.uid, hpPercent: fc.p1[i].hpPercent, status: fc.p1[i].status })),
+  defeatedTeam, participantUids, isWild: false, trainer, rng,
+});
+// summary: { expGained, levelUps (moves/evolution to resolve), money, items }
+```
+
+EXP scales to the opponent (Gen-5 formula); Exp Share is difficulty-dependent;
+level-ups surface move-learn/evolution decisions; HP/status persist in and out of
+battle via the Bridge's `initialConditions` / `finalConditions`.
+
 ## Commands
 
 ```bash
