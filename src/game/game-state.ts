@@ -11,6 +11,7 @@ export function createNewGame(settings: GameSettings): GameState {
     location: { mapId: 'start', x: 0, y: 0, atPokemonCenter: true },
     flags: {}, graveyard: [], time: { day: 0, minutes: 0 },
     trainerLog: {},
+    stabilizeMeter: 0,
   };
 }
 

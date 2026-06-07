@@ -32,4 +32,5 @@ export interface GameState {
   graveyard: OwnedPokemon[];
   time: { day: number; minutes: number };
   trainerLog: Record<string, { defeats: number; lastDefeatedDay: number; readyDay: number }>;
+  stabilizeMeter: number;
 }
