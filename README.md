@@ -168,6 +168,15 @@ const cap = rematchLevelCap(game);              // -> Team Composer levelCap for
 Deterministic step-based clock with a `timeOfDay` hook for day/night encounters;
 player-initiated rematches scale to progress (capped at 75).
 
+## Region Content (sub-project 4b — full 8-badge region)
+
+The complete main path of The Mosaic: 8 type-locked gyms (Verdant Hollow → Shadowmere,
+caps 12→52), connecting routes with biome-appropriate encounter tables (the Convergence
+Tide), trainers, shops, and NPCs — 18 locations in one connected map. Factual species
+data (catch/exp/growth/EV for all 1025 species) is generated from PokéAPI by
+`scripts/gen-data.mjs`; region content is validated by `region-integrity.test.ts`.
+Elite Four / Champion / story climax are sub-project 4c.
+
 ## Commands
 
 ```bash

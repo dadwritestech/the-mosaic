@@ -1,6 +1,6 @@
 import type { Location, TrainerDef, GymDef } from './types';
 import type { ShopDef } from '../game/shop';
-import { LOCATIONS, TRAINERS, GYMS, SHOPS } from './slice/data';
+import { ALL_LOCATIONS as LOCATIONS, ALL_TRAINERS as TRAINERS, ALL_GYMS as GYMS, ALL_SHOPS as SHOPS } from './region/index';
 
 const locById = new Map(LOCATIONS.map((l) => [l.id, l]));
 const trainerById = new Map(TRAINERS.map((t) => [t.id, t]));
