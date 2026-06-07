@@ -1,0 +1,21 @@
+{
+  "name": "convergence-region",
+  "version": "0.1.0",
+  "description": "A playable Pokemon-style RPG (new region) built on the Pokemon Showdown battle engine. Private experiment.",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "pokemon-showdown": "^0.11.10"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.2",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  }
+}
