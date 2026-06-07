@@ -41,6 +41,27 @@ const result = bridge.attemptCatch('ultra'); // { caught, shakes }
 - Catch-rate data is bundled in `src/data/catch-rates.ts` because Showdown's species
   data has no catch rate (it's a competitive sim).
 
+## AI Brain (sub-project 2a — decision core)
+
+```ts
+import { chooseAction } from './src/ai/decision-brain';
+import { buildView } from './src/ai/view-from-bridge';
+import { makeRng } from './src/ai/rng';
+
+const ctx = {
+  gen: 9,
+  knobs: { randomness: 0, lookaheadDepth: 1, switchSmarts: 1 }, // "Hard"
+  personality: { aggression: 1, caution: 1 },
+  rng: makeRng(Date.now()),
+};
+const view = buildView('p2', bridge.state, aiTeam, playerTeam, bridge.getChoices('p2').moves, []);
+const action = chooseAction(view, ctx); // -> feed to bridge.submitTurn
+```
+
+Difficulty = knob values (randomness / lookaheadDepth / switchSmarts) via a
+`@smogon/calc` damage model; personality = weights. Learning/adaptation (player
+model) and team drafting arrive in plans 2b and 2c.
+
 ## Commands
 
 ```bash
