@@ -62,6 +62,25 @@ Difficulty = knob values (randomness / lookaheadDepth / switchSmarts) via a
 `@smogon/calc` damage model; personality = weights. Learning/adaptation (player
 model) and team drafting arrive in plans 2b and 2c.
 
+## AI Brain (sub-project 2b — adaptation)
+
+```ts
+import { createPlayerModel } from './src/ai/player-model';
+import { observeBattle } from './src/ai/observer';
+import { computeSettings } from './src/ai/difficulty-controller';
+
+let model = createPlayerModel();             // persisted in the save
+model = observeBattle(model, battleSummary); // after each battle (only writer)
+
+const settings = computeSettings({
+  baseTier: 'hard', advancedToggle: false,
+  autoScale: 0,                                  // smoothed recent performance (-1..+1)
+  reputationRamp: model.reputation.score / 40,   // 0..1, earned over time
+});
+// settings -> Knobs for the decision brain; predictionWeight/counterDraftStrength
+// are gated to ~0 until the player has earned a reputation (the immersion guardrail).
+```
+
 ## Commands
 
 ```bash
