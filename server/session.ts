@@ -4,6 +4,7 @@ import type { GameState } from '../src/game/types';
 import { createNewGame, addToParty, grantBadge } from '../src/game/game-state';
 import { createOwned } from '../src/game/owned-pokemon';
 import { advanceStep, timeOfDay } from '../src/game/clock';
+import { wildMoveset } from '../src/game/learnset';
 import { rollEncounter } from '../src/content/encounters';
 import { getLocation, getGym } from '../src/content/region';
 import { composeTeam } from '../src/ai/team-composer';
@@ -73,7 +74,7 @@ class GameSession {
   }
 
   private async startWild(species: string, level: number) {
-    const wild = createOwned({ species, level, moves: ['tackle'] });
+    const wild = createOwned({ species, level, moves: wildMoveset(species, level) });
     const bridge = new BattleBridge();
     await bridge.startBattle([ownedToSet(this.mon())], [ownedToSet(wild)], { formatid: 'gen9customgame', isWild: true });
     this.battle = { bridge, isWild: true, oppTeam: [ownedToSet(wild)], defeated: [{ species, level }], log: `A wild ${species} appeared!` };
