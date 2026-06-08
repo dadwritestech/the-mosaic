@@ -89,14 +89,38 @@ class GameSession {
 
   private battleView() {
     const b = this.battle!; const s = b.bridge.state; const c = b.bridge.getChoices('p1');
+    const sideView = (m: any) => ({ species: m.species, hpPercent: m.hpPercent, status: m.status, boosts: m.boosts ?? {}, volatiles: m.volatiles ?? [] });
     return {
       screen: 'battle' as const, isWild: b.isWild,
-      self: { species: s.active.p1!.species, level: this.mon().level, hpPercent: s.active.p1!.hpPercent, status: s.active.p1!.status },
-      foe: { species: s.active.p2!.species, hpPercent: s.active.p2!.hpPercent, status: s.active.p2!.status },
+      self: { ...sideView(s.active.p1), level: this.mon().level, heldItem: this.mon().heldItem ?? '' },
+      foe: { ...sideView(s.active.p2) },
+      weather: s.weather ?? '', terrain: s.terrain ?? '',
       moves: c.moves.map((mo: { index: number; name: string }) => ({ index: mo.index, name: mo.name })),
       canCatch: c.canCatch, log: b.log,
       done: s.winner !== undefined ? (s.winner === 'p1' ? 'win' : 'loss') : null,
     };
+  }
+
+  private narrate(events: any[]): string {
+    const actor = (side: string) => (side === 'p1' ? 'You' : 'The foe');       // for verbs ("used")
+    const subj = (side: string) => (side === 'p1' ? 'Your Pokémon' : 'The foe'); // for "was X"
+    const poss = (side: string) => (side === 'p1' ? "Your Pokémon's" : "The foe's");
+    const lines: string[] = [];
+    for (const e of events) {
+      switch (e.type) {
+        case 'move': lines.push(`${actor(e.side)} used ${e.move}.`); break;
+        case 'status': lines.push(`${subj(e.side)} was ${({ par: 'paralyzed', psn: 'poisoned', tox: 'badly poisoned', brn: 'burned', slp: 'put to sleep', frz: 'frozen' } as any)[e.status] ?? e.status}!`); break;
+        case 'cure': lines.push(`${subj(e.side)} shook off its ${e.status}.`); break;
+        case 'boost': lines.push(`${poss(e.side)} ${e.stat.toUpperCase()} ${e.amount > 0 ? 'rose' : 'fell'}${Math.abs(e.amount) > 1 ? ' sharply' : ''}!`); break;
+        case 'weather': lines.push(e.weather ? `The weather turned to ${e.weather}.` : 'The weather cleared.'); break;
+        case 'field': if (e.start) lines.push(`${e.effect} set in!`); break;
+        case 'volatile': if (e.start) lines.push(`${subj(e.side)} became ${e.effect}.`); break;
+        case 'ability': lines.push(`${poss(e.side)} ${e.ability} activated!`); break;
+        case 'item': lines.push(e.ended ? `${poss(e.side)} ${e.item} was used up.` : `${poss(e.side)} ${e.item} activated.`); break;
+        case 'faint': lines.push(`${subj(e.side)} fainted!`); break;
+      }
+    }
+    return lines.join(' ') || '…';
   }
 
   async turn(moveIndex: number) {
@@ -104,8 +128,7 @@ class GameSession {
     const view = buildView('p2', b.bridge.state, b.oppTeam, [ownedToSet(this.mon())], b.bridge.getChoices('p2').moves, []);
     const ai = chooseAction(view, { gen: 9, knobs: { randomness: 0.1, lookaheadDepth: 1, switchSmarts: 1 }, personality: { aggression: 1, caution: 0.5 }, rng: makeRng(Date.now()) });
     const res = await b.bridge.submitTurn({ kind: 'move', index: moveIndex }, ai);
-    b.log = res.events.filter((e) => e.type === 'move' || e.type === 'faint')
-      .map((e: any) => e.type === 'move' ? `${e.side === 'p1' ? 'Your' : 'Foe'} ${e.move}` : `${e.side === 'p1' ? 'Your mon' : 'Foe'} fainted`).join(' · ') || '…';
+    b.log = this.narrate(res.events);
     if (b.bridge.state.winner) return this.finish();
     return this.battleView();
   }

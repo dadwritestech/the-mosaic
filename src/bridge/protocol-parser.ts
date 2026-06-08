@@ -21,15 +21,28 @@ export function parseLine(
 ): BattleEvent | null {
   const parts = line.split('|'); // leading '' because line starts with '|'
   const tag = parts[1];
+  const cleanup = (s: string) => (s ?? '').replace(/^(move|item|ability|typechange):\s*/, '').trim();
   switch (tag) {
-    case 'move':   return { type: 'move', side: sideOf(parts[2]), move: parts[3] };
-    case '-damage':return { type: 'damage', side: sideOf(parts[2]), hpPercent: hpPercent(parts[3]) };
-    case '-status':return { type: 'status', side: sideOf(parts[2]), status: parts[3] };
-    case 'faint':  return { type: 'faint', side: sideOf(parts[2]) };
-    case 'switch': return { type: 'switch', side: sideOf(parts[2]),
+    case 'move':    return { type: 'move', side: sideOf(parts[2]), move: parts[3] };
+    case '-damage': return { type: 'damage', side: sideOf(parts[2]), hpPercent: hpPercent(parts[3]) };
+    case '-heal':   return { type: 'heal', side: sideOf(parts[2]), hpPercent: hpPercent(parts[3]) };
+    case '-status': return { type: 'status', side: sideOf(parts[2]), status: parts[3] };
+    case '-curestatus': return { type: 'cure', side: sideOf(parts[2]), status: parts[3] };
+    case '-boost':  return { type: 'boost', side: sideOf(parts[2]), stat: parts[3], amount: Number(parts[4]) };
+    case '-unboost':return { type: 'boost', side: sideOf(parts[2]), stat: parts[3], amount: -Number(parts[4]) };
+    case '-weather':return { type: 'weather', weather: parts[2] === 'none' ? '' : parts[2] };
+    case '-fieldstart': return { type: 'field', effect: cleanup(parts[2]), start: true };
+    case '-fieldend':   return { type: 'field', effect: cleanup(parts[2]), start: false };
+    case '-start':  return { type: 'volatile', side: sideOf(parts[2]), effect: cleanup(parts[3]), start: true };
+    case '-end':    return { type: 'volatile', side: sideOf(parts[2]), effect: cleanup(parts[3]), start: false };
+    case '-item':   return { type: 'item', side: sideOf(parts[2]), item: parts[3], ended: false };
+    case '-enditem':return { type: 'item', side: sideOf(parts[2]), item: parts[3], ended: true };
+    case '-ability':return { type: 'ability', side: sideOf(parts[2]), ability: parts[3] };
+    case 'faint':   return { type: 'faint', side: sideOf(parts[2]) };
+    case 'switch':  return { type: 'switch', side: sideOf(parts[2]),
                             species: parts[3].split(',')[0], hpPercent: hpPercent(parts[4]) };
-    case 'turn':   return { type: 'turn', turn: Number(parts[2]) };
-    case 'win':    return { type: 'win', side: nameMap[parts[2]] ?? 'p1' };
-    default:       return null;
+    case 'turn':    return { type: 'turn', turn: Number(parts[2]) };
+    case 'win':     return { type: 'win', side: nameMap[parts[2]] ?? 'p1' };
+    default:        return null;
   }
 }

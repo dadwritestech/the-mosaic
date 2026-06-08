@@ -27,4 +27,25 @@ describe('protocol parser', () => {
   it('returns null for irrelevant lines', () => {
     expect(parseLine('|upkeep')).toBeNull();
   });
+
+  it('parses boosts/unboosts as signed amounts', () => {
+    expect(parseLine('|-boost|p1a: Pikachu|atk|2')).toEqual({ type: 'boost', side: 'p1', stat: 'atk', amount: 2 });
+    expect(parseLine('|-unboost|p2a: Foe|spe|1')).toEqual({ type: 'boost', side: 'p2', stat: 'spe', amount: -1 });
+  });
+
+  it('parses weather (and clears on "none")', () => {
+    expect(parseLine('|-weather|RainDance')).toEqual({ type: 'weather', weather: 'RainDance' });
+    expect(parseLine('|-weather|none')).toEqual({ type: 'weather', weather: '' });
+  });
+
+  it('parses cure, heal, volatiles, items, abilities, terrain', () => {
+    expect(parseLine('|-curestatus|p1a: Pikachu|par')).toEqual({ type: 'cure', side: 'p1', status: 'par' });
+    expect(parseLine('|-heal|p1a: Pikachu|80/100')).toEqual({ type: 'heal', side: 'p1', hpPercent: 80 });
+    expect(parseLine('|-start|p2a: Foe|confusion')).toEqual({ type: 'volatile', side: 'p2', effect: 'confusion', start: true });
+    expect(parseLine('|-end|p2a: Foe|confusion')).toEqual({ type: 'volatile', side: 'p2', effect: 'confusion', start: false });
+    expect(parseLine('|-item|p1a: Pikachu|Leftovers')).toEqual({ type: 'item', side: 'p1', item: 'Leftovers', ended: false });
+    expect(parseLine('|-enditem|p1a: Pikachu|Sitrus Berry')).toEqual({ type: 'item', side: 'p1', item: 'Sitrus Berry', ended: true });
+    expect(parseLine('|-ability|p2a: Foe|Intimidate')).toEqual({ type: 'ability', side: 'p2', ability: 'Intimidate' });
+    expect(parseLine('|-fieldstart|move: Electric Terrain')).toEqual({ type: 'field', effect: 'Electric Terrain', start: true });
+  });
 });

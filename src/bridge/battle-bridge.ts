@@ -194,14 +194,23 @@ export class BattleBridge {
     switch (ev.type) {
       case 'turn': this._state.turn = ev.turn; break;
       case 'switch':
-        this._state.active[ev.side] = { species: ev.species, hpPercent: ev.hpPercent, status: '' };
+        // a fresh mon clears boosts/volatiles/status
+        this._state.active[ev.side] = { species: ev.species, hpPercent: ev.hpPercent, status: '', boosts: {}, volatiles: [] };
         break;
-      case 'damage': {
-        const m = this._state.active[ev.side]; if (m) m.hpPercent = ev.hpPercent; break;
+      case 'damage': { const m = this._state.active[ev.side]; if (m) m.hpPercent = ev.hpPercent; break; }
+      case 'heal': { const m = this._state.active[ev.side]; if (m) m.hpPercent = ev.hpPercent; break; }
+      case 'status': { const m = this._state.active[ev.side]; if (m) m.status = ev.status; break; }
+      case 'cure': { const m = this._state.active[ev.side]; if (m && m.status === ev.status) m.status = ''; break; }
+      case 'boost': {
+        const m = this._state.active[ev.side]; if (m) { m.boosts = m.boosts ?? {}; m.boosts[ev.stat] = Math.max(-6, Math.min(6, (m.boosts[ev.stat] ?? 0) + ev.amount)); }
+        break;
       }
-      case 'status': {
-        const m = this._state.active[ev.side]; if (m) m.status = ev.status; break;
+      case 'volatile': {
+        const m = this._state.active[ev.side]; if (m) { m.volatiles = m.volatiles ?? []; if (ev.start) { if (!m.volatiles.includes(ev.effect)) m.volatiles.push(ev.effect); } else m.volatiles = m.volatiles.filter((v) => v !== ev.effect); }
+        break;
       }
+      case 'weather': this._state.weather = ev.weather; break;
+      case 'field': this._state.terrain = ev.start ? ev.effect : ''; break;
       case 'win': this._state.winner = ev.side; break;
       default: break;
     }

@@ -39,8 +39,9 @@ export class BattleScreen {
       this.foeObj = await loadCreature(this.foeSpecies, 'front'); this.foeObj.position.set(2.4, 1.5, -1.2); this.scene.add(this.foeObj);
     }
     this.hud.render({
-      selfName: `${view.self.species} L${view.self.level}`, selfHp: view.self.hpPercent,
-      foeName: `${view.foe.species}`, foeHp: view.foe.hpPercent,
+      self: { name: `${view.self.species} L${view.self.level}`, hp: view.self.hpPercent, status: view.self.status, boosts: view.self.boosts ?? {}, volatiles: view.self.volatiles ?? [], item: view.self.heldItem || undefined },
+      foe: { name: `${view.foe.species}`, hp: view.foe.hpPercent, status: view.foe.status, boosts: view.foe.boosts ?? {}, volatiles: view.foe.volatiles ?? [] },
+      weather: view.weather ?? '', terrain: view.terrain ?? '',
       moves: view.moves, canCatch: view.canCatch, log: view.log,
     });
     if (!this.running) { this.running = true; this.loop(); }

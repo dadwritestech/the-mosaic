@@ -22,18 +22,32 @@ export type Action =
 export interface MoveChoice { index: number; id: string; name: string; pp: number; maxpp: number; disabled: boolean; }
 export interface SwitchChoice { index: number; species: string; hpPercent: number; fainted: boolean; }
 
-export interface ActiveMon { species: string; hpPercent: number; status: string; }
+export interface ActiveMon {
+  species: string; hpPercent: number; status: string;
+  boosts?: Record<string, number>; // stat -> stage (e.g. { atk: 2, spe: -1 })
+  volatiles?: string[];            // e.g. ['confusion']
+}
 export interface BattleState {
   isWild: boolean;
   turn: number;
   active: Record<Side, ActiveMon | null>;
   winner: Side | null | undefined; // undefined = ongoing
+  weather?: string;                // '' = clear
+  terrain?: string;                // '' = none
 }
 
 export type BattleEvent =
   | { type: 'move'; side: Side; move: string }
   | { type: 'damage'; side: Side; hpPercent: number }
+  | { type: 'heal'; side: Side; hpPercent: number }
   | { type: 'status'; side: Side; status: string }
+  | { type: 'cure'; side: Side; status: string }
+  | { type: 'boost'; side: Side; stat: string; amount: number } // signed
+  | { type: 'weather'; weather: string }                         // '' = cleared
+  | { type: 'field'; effect: string; start: boolean }            // terrain/hazards
+  | { type: 'volatile'; side: Side; effect: string; start: boolean }
+  | { type: 'item'; side: Side; item: string; ended: boolean }
+  | { type: 'ability'; side: Side; ability: string }
   | { type: 'faint'; side: Side }
   | { type: 'switch'; side: Side; species: string; hpPercent: number }
   | { type: 'turn'; turn: number }
