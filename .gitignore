@@ -9,3 +9,4 @@ dist-web/
 _vite.log
 .playwright-mcp/
 t*-*.png
+.saves/

@@ -29,13 +29,13 @@ export class OverworldScreen {
     ctx.fillStyle = 'rgba(10,14,22,.78)'; ctx.fillRect(0, 0, W, 36);
     ctx.fillStyle = '#fff'; ctx.font = '15px system-ui';
     const party = view.party.map((m: any) => `${m.species} L${m.level} ${m.hpPercent}%`).join('   ');
-    ctx.fillText(`${view.locationId}  ·  ${view.time}  ·  badges:${view.badges.length}  ·  ${party}`, 12, 24);
+    ctx.fillText(`${view.locationId}  ·  ${view.time}  ·  badges:${view.badges.length}  ·  ${view.money ?? 0}₽  ·  ${party}`, 12, 24);
     if (view.message) {
       ctx.fillStyle = 'rgba(20,30,46,.92)'; ctx.fillRect(0, H - 70, W, 70);
       ctx.fillStyle = '#fff'; ctx.font = '18px system-ui';
       ctx.fillText(view.message, 20, H - 32);
     }
     ctx.fillStyle = '#9fb3c8'; ctx.font = '13px system-ui';
-    ctx.fillText('Arrow keys to walk · step into tall grass (green) to battle · purple tile = gym', 12, H - 88);
+    ctx.fillText('Arrows: walk · grass=battle · purple=gym · pink=Center(heal) · gold=Shop · press M for menu', 12, H - 88);
   }
 }

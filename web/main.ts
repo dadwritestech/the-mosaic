@@ -1,6 +1,7 @@
 import { api } from './net';
 import { OverworldScreen } from './overworld/overworld-screen';
 import { BattleScreen } from './battle/battle-screen';
+import { Menu } from './ui/menu';
 
 const root = document.getElementById('game')!;
 const canvas = document.createElement('canvas');
@@ -19,14 +20,24 @@ async function send(cmd: string, body: Record<string, unknown> = {}) {
 }
 
 const overworld = new OverworldScreen(canvas, (dir) => send('move', { dir }));
+const menu = new Menu(root, (cmd, body) => send(cmd, body));
+
+// Pressing M (or Escape to close) toggles the pause menu while in the overworld.
+window.addEventListener('keydown', (e) => {
+  if (battle) return;
+  if (e.key === 'm' || e.key === 'M') { send('menu', { which: 'pause' }); }
+  else if (e.key === 'Escape') { send('closeMenu'); }
+});
 
 function render(view: any) {
   if (view.screen === 'overworld') {
     if (battle) { battle.dispose(); battle = null; }
     canvas.style.display = 'block';
     overworld.render(view);
+    menu.render(view);          // draws the overlay on top, or clears it when none
   } else {
     canvas.style.display = 'none';
+    menu.clear();
     if (!battle) {
       battle = new BattleScreen(root, (kind, index) => send(kind, kind === 'turn' ? { index } : {}));
     }

@@ -52,6 +52,14 @@ export function withdrawFromBox(g: GameState, uid: string): GameState {
   return g;
 }
 
+/** Reorders the party by swapping two slots. No-op for out-of-range or equal indices. */
+export function swapPartyMembers(g: GameState, i: number, j: number): GameState {
+  if (i === j || i < 0 || j < 0 || i >= g.party.length || j >= g.party.length) return g;
+  const party = g.party.slice();
+  [party[i], party[j]] = [party[j], party[i]];
+  return { ...g, party };
+}
+
 export function addItem(g: GameState, pocket: string, itemId: string, count = 1): GameState {
   const bag = { ...g.bag, [pocket]: { ...(g.bag[pocket] ?? {}) } };
   bag[pocket][itemId] = (bag[pocket][itemId] ?? 0) + count;

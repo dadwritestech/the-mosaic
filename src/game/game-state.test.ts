@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   createNewGame, addToParty, depositToBox, withdrawFromBox,
   addItem, useItem, addMoney, spendMoney, grantBadge, registerCaught,
+  swapPartyMembers,
 } from './game-state';
 import { createOwned } from './owned-pokemon';
 
@@ -41,6 +42,19 @@ describe('game state containers', () => {
     expect(spendMoney(g, 999)).toBeNull();          // can't overspend
     g = spendMoney(g, 200)!;
     expect(g.money).toBe(300);
+  });
+
+  it('swaps two party members by index and is a no-op for bad/equal indices', () => {
+    let g = createNewGame({ difficultyMode: 'normal', nuzlocke: false });
+    const a = createOwned({ species: 'Pikachu', level: 5 });
+    const b = createOwned({ species: 'Bulbasaur', level: 5 });
+    const c = createOwned({ species: 'Charmander', level: 5 });
+    g = addToParty(addToParty(addToParty(g, a), b), c);
+    const swapped = swapPartyMembers(g, 0, 2);
+    expect(swapped.party.map((m) => m.uid)).toEqual([c.uid, b.uid, a.uid]);
+    // out-of-range or equal indices leave the party unchanged (same order)
+    expect(swapPartyMembers(g, 0, 9).party.map((m) => m.uid)).toEqual([a.uid, b.uid, c.uid]);
+    expect(swapPartyMembers(g, 1, 1).party.map((m) => m.uid)).toEqual([a.uid, b.uid, c.uid]);
   });
 
   it('grants badges (no duplicates) and registers pokedex caught', () => {
