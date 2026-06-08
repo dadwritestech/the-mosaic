@@ -117,6 +117,12 @@ class GameSession {
         case 'volatile': if (e.start) lines.push(`${subj(e.side)} became ${e.effect}.`); break;
         case 'ability': lines.push(`${poss(e.side)} ${e.ability} activated!`); break;
         case 'item': lines.push(e.ended ? `${poss(e.side)} ${e.item} was used up.` : `${poss(e.side)} ${e.item} activated.`); break;
+        case 'cant': lines.push(`${subj(e.side)} ${({ par: "is paralyzed! It can't move!", slp: 'is fast asleep!', frz: 'is frozen solid!', flinch: "flinched and couldn't move!" } as any)[e.reason] ?? "couldn't move!"}`); break;
+        case 'immune': lines.push(`It doesn't affect ${e.side === 'p1' ? 'your Pokémon' : 'the foe'}…`); break;
+        case 'miss': lines.push(`${actor(e.side)} missed!`); break;
+        case 'effectiveness': lines.push(e.kind === 'super' ? "It's super effective!" : "It's not very effective…"); break;
+        case 'crit': lines.push('A critical hit!'); break;
+        case 'fail': lines.push('But it failed!'); break;
         case 'faint': lines.push(`${subj(e.side)} fainted!`); break;
       }
     }

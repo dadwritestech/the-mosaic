@@ -48,4 +48,14 @@ describe('protocol parser', () => {
     expect(parseLine('|-ability|p2a: Foe|Intimidate')).toEqual({ type: 'ability', side: 'p2', ability: 'Intimidate' });
     expect(parseLine('|-fieldstart|move: Electric Terrain')).toEqual({ type: 'field', effect: 'Electric Terrain', start: true });
   });
+
+  it('parses cant-move, immunity, miss, effectiveness, crit, fail', () => {
+    expect(parseLine('|cant|p2a: Foe|par')).toEqual({ type: 'cant', side: 'p2', reason: 'par' });
+    expect(parseLine('|-immune|p2a: Gengar')).toEqual({ type: 'immune', side: 'p2' });
+    expect(parseLine('|-miss|p1a: Pikachu|p2a: Foe')).toEqual({ type: 'miss', side: 'p1' });
+    expect(parseLine('|-supereffective|p2a: Foe')).toEqual({ type: 'effectiveness', side: 'p2', kind: 'super' });
+    expect(parseLine('|-resisted|p2a: Foe')).toEqual({ type: 'effectiveness', side: 'p2', kind: 'resist' });
+    expect(parseLine('|-crit|p2a: Foe')).toEqual({ type: 'crit', side: 'p2' });
+    expect(parseLine('|-fail|p1a: Pikachu')).toEqual({ type: 'fail', side: 'p1' });
+  });
 });

@@ -48,6 +48,12 @@ export type BattleEvent =
   | { type: 'volatile'; side: Side; effect: string; start: boolean }
   | { type: 'item'; side: Side; item: string; ended: boolean }
   | { type: 'ability'; side: Side; ability: string }
+  | { type: 'cant'; side: Side; reason: string }              // couldn't move (par/slp/frz/flinch)
+  | { type: 'immune'; side: Side }                             // no effect (e.g. Normal vs Ghost)
+  | { type: 'miss'; side: Side }
+  | { type: 'effectiveness'; side: Side; kind: 'super' | 'resist' }
+  | { type: 'crit'; side: Side }
+  | { type: 'fail'; side: Side }
   | { type: 'faint'; side: Side }
   | { type: 'switch'; side: Side; species: string; hpPercent: number }
   | { type: 'turn'; turn: number }

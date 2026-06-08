@@ -38,6 +38,13 @@ export function parseLine(
     case '-item':   return { type: 'item', side: sideOf(parts[2]), item: parts[3], ended: false };
     case '-enditem':return { type: 'item', side: sideOf(parts[2]), item: parts[3], ended: true };
     case '-ability':return { type: 'ability', side: sideOf(parts[2]), ability: parts[3] };
+    case 'cant':    return { type: 'cant', side: sideOf(parts[2]), reason: cleanup(parts[3]) };
+    case '-immune': return { type: 'immune', side: sideOf(parts[2]) };
+    case '-miss':   return { type: 'miss', side: sideOf(parts[2]) };
+    case '-supereffective': return { type: 'effectiveness', side: sideOf(parts[2]), kind: 'super' };
+    case '-resisted':       return { type: 'effectiveness', side: sideOf(parts[2]), kind: 'resist' };
+    case '-crit':   return { type: 'crit', side: sideOf(parts[2]) };
+    case '-fail':   return { type: 'fail', side: sideOf(parts[2]) };
     case 'faint':   return { type: 'faint', side: sideOf(parts[2]) };
     case 'switch':  return { type: 'switch', side: sideOf(parts[2]),
                             species: parts[3].split(',')[0], hpPercent: hpPercent(parts[4]) };
