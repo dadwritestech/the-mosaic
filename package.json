@@ -8,7 +8,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "dev": "vite",
+    "dev": "concurrently -k -n server,web \"tsx watch server/standalone.ts\" \"vite\"",
+    "server": "tsx server/standalone.ts",
     "build:web": "vite build",
     "preview": "vite preview"
   },
@@ -20,9 +21,12 @@
   "devDependencies": {
     "@types/node": "^25.9.2",
     "@types/three": "^0.184.1",
+    "concurrently": "^10.0.3",
     "three": "^0.184.0",
+    "tsx": "^4.22.4",
     "typescript": "^6.0.3",
     "vite": "^8.0.16",
+    "vite-plugin-node-polyfills": "^0.28.0",
     "vitest": "^4.1.8"
   }
 }
