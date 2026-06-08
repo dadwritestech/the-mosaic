@@ -22,14 +22,20 @@ export function parseLine(
   const parts = line.split('|'); // leading '' because line starts with '|'
   const tag = parts[1];
   const cleanup = (s: string) => (s ?? '').replace(/^(move|item|ability|typechange):\s*/, '').trim();
+  // Showdown appends "[from] ability: Static" / "[from] psn" etc. to explain a cause.
+  const fromCause = (): string | undefined => {
+    const f = parts.find((p) => p.startsWith('[from]'));
+    if (!f) return undefined;
+    return f.replace('[from]', '').replace(/^\s*(ability|item|move|effect):\s*/i, '').trim() || undefined;
+  };
   switch (tag) {
     case 'move':    return { type: 'move', side: sideOf(parts[2]), move: parts[3] };
-    case '-damage': return { type: 'damage', side: sideOf(parts[2]), hpPercent: hpPercent(parts[3]) };
+    case '-damage': return { type: 'damage', side: sideOf(parts[2]), hpPercent: hpPercent(parts[3]), cause: fromCause() };
     case '-heal':   return { type: 'heal', side: sideOf(parts[2]), hpPercent: hpPercent(parts[3]) };
-    case '-status': return { type: 'status', side: sideOf(parts[2]), status: parts[3] };
+    case '-status': return { type: 'status', side: sideOf(parts[2]), status: parts[3], cause: fromCause() };
     case '-curestatus': return { type: 'cure', side: sideOf(parts[2]), status: parts[3] };
-    case '-boost':  return { type: 'boost', side: sideOf(parts[2]), stat: parts[3], amount: Number(parts[4]) };
-    case '-unboost':return { type: 'boost', side: sideOf(parts[2]), stat: parts[3], amount: -Number(parts[4]) };
+    case '-boost':  return { type: 'boost', side: sideOf(parts[2]), stat: parts[3], amount: Number(parts[4]), cause: fromCause() };
+    case '-unboost':return { type: 'boost', side: sideOf(parts[2]), stat: parts[3], amount: -Number(parts[4]), cause: fromCause() };
     case '-weather':return { type: 'weather', weather: parts[2] === 'none' ? '' : parts[2] };
     case '-fieldstart': return { type: 'field', effect: cleanup(parts[2]), start: true };
     case '-fieldend':   return { type: 'field', effect: cleanup(parts[2]), start: false };

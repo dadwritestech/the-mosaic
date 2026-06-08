@@ -38,11 +38,11 @@ export interface BattleState {
 
 export type BattleEvent =
   | { type: 'move'; side: Side; move: string }
-  | { type: 'damage'; side: Side; hpPercent: number }
+  | { type: 'damage'; side: Side; hpPercent: number; cause?: string }
   | { type: 'heal'; side: Side; hpPercent: number }
-  | { type: 'status'; side: Side; status: string }
+  | { type: 'status'; side: Side; status: string; cause?: string }
   | { type: 'cure'; side: Side; status: string }
-  | { type: 'boost'; side: Side; stat: string; amount: number } // signed
+  | { type: 'boost'; side: Side; stat: string; amount: number; cause?: string } // signed
   | { type: 'weather'; weather: string }                         // '' = cleared
   | { type: 'field'; effect: string; start: boolean }            // terrain/hazards
   | { type: 'volatile'; side: Side; effect: string; start: boolean }

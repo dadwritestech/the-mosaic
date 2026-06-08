@@ -58,4 +58,15 @@ describe('protocol parser', () => {
     expect(parseLine('|-crit|p2a: Foe')).toEqual({ type: 'crit', side: 'p2' });
     expect(parseLine('|-fail|p1a: Pikachu')).toEqual({ type: 'fail', side: 'p1' });
   });
+
+  it('captures the [from] cause on status/damage/boost (e.g. Static, poison, Intimidate)', () => {
+    expect(parseLine('|-status|p2a: Sentret|par|[from] ability: Static|[of] p1a: Pikachu'))
+      .toEqual({ type: 'status', side: 'p2', status: 'par', cause: 'Static' });
+    expect(parseLine('|-damage|p1a: X|88/100|[from] psn'))
+      .toEqual({ type: 'damage', side: 'p1', hpPercent: 88, cause: 'psn' });
+    expect(parseLine('|-unboost|p2a: Foe|atk|1|[from] ability: Intimidate|[of] p1a: Y'))
+      .toEqual({ type: 'boost', side: 'p2', stat: 'atk', amount: -1, cause: 'Intimidate' });
+    // plain status (no cause) stays cause-less
+    expect(parseLine('|-status|p1a: Pikachu|brn')).toEqual({ type: 'status', side: 'p1', status: 'brn', cause: undefined });
+  });
 });

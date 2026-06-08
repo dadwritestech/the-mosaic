@@ -109,9 +109,10 @@ class GameSession {
     for (const e of events) {
       switch (e.type) {
         case 'move': lines.push(`${actor(e.side)} used ${e.move}.`); break;
-        case 'status': lines.push(`${subj(e.side)} was ${({ par: 'paralyzed', psn: 'poisoned', tox: 'badly poisoned', brn: 'burned', slp: 'put to sleep', frz: 'frozen' } as any)[e.status] ?? e.status}!`); break;
+        case 'status': { const word = ({ par: 'paralyzed', psn: 'poisoned', tox: 'badly poisoned', brn: 'burned', slp: 'put to sleep', frz: 'frozen' } as any)[e.status] ?? e.status; lines.push(`${subj(e.side)} was ${word}${e.cause ? ` by ${e.cause}` : ''}!`); break; }
+        case 'damage': if (e.cause) lines.push(`${subj(e.side)} was hurt by ${/^(psn|tox)$/.test(e.cause) ? 'poison' : e.cause === 'brn' ? 'its burn' : e.cause}!`); break;
         case 'cure': lines.push(`${subj(e.side)} shook off its ${e.status}.`); break;
-        case 'boost': lines.push(`${poss(e.side)} ${e.stat.toUpperCase()} ${e.amount > 0 ? 'rose' : 'fell'}${Math.abs(e.amount) > 1 ? ' sharply' : ''}!`); break;
+        case 'boost': lines.push(`${poss(e.side)} ${e.stat.toUpperCase()} ${e.amount > 0 ? 'rose' : 'fell'}${Math.abs(e.amount) > 1 ? ' sharply' : ''}${e.cause ? ` (${e.cause})` : ''}!`); break;
         case 'weather': lines.push(e.weather ? `The weather turned to ${e.weather}.` : 'The weather cleared.'); break;
         case 'field': if (e.start) lines.push(`${e.effect} set in!`); break;
         case 'volatile': if (e.start) lines.push(`${subj(e.side)} became ${e.effect}.`); break;
