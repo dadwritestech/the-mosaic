@@ -16,6 +16,7 @@ import { recordTrainerDefeat } from '../src/game/rematch';
 import { maxHp } from '../src/game/stats';
 import { makeRng } from '../src/ai/rng';
 import type { PokemonSet } from '../src/bridge/types';
+import * as Sim from 'pokemon-showdown';
 import { SLICE_MAPS } from '../web/overworld/maps/slice';
 import { tileAt, isWalkable, metaAt, type TileMap } from '../web/overworld/tilemap';
 
@@ -95,39 +96,42 @@ class GameSession {
       self: { ...sideView(s.active.p1), level: this.mon().level, heldItem: this.mon().heldItem ?? '' },
       foe: { ...sideView(s.active.p2) },
       weather: s.weather ?? '', terrain: s.terrain ?? '',
-      moves: c.moves.map((mo: { index: number; name: string }) => ({ index: mo.index, name: mo.name })),
+      moves: c.moves.map((mo: { index: number; id: string; name: string; pp: number; maxpp: number }) => {
+        const md = (Sim.Dex as any).forGen(9).moves.get(mo.id);
+        return { index: mo.index, name: mo.name, type: md.type, category: md.category, pp: mo.pp, maxpp: mo.maxpp };
+      }),
       canCatch: c.canCatch, log: b.log,
       done: s.winner !== undefined ? (s.winner === 'p1' ? 'win' : 'loss') : null,
     };
   }
 
-  private narrate(events: any[]): string {
-    const actor = (side: string) => (side === 'p1' ? 'You' : 'The foe');       // for verbs ("used")
-    const subj = (side: string) => (side === 'p1' ? 'Your Pokémon' : 'The foe'); // for "was X"
-    const poss = (side: string) => (side === 'p1' ? "Your Pokémon's" : "The foe's");
+  private narrate(events: any[], name: (side: string) => string): string {
+    const nm = (side: string) => (side === 'p1' ? name(side) : `the opposing ${name(side)}`);
+    const cause = (e: any) => (e.source ? `${e.source}'s ${e.cause}` : e.cause); // "Pikachu's Static"
+    const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
     const lines: string[] = [];
     for (const e of events) {
       switch (e.type) {
-        case 'move': lines.push(`${actor(e.side)} used ${e.move}.`); break;
-        case 'status': { const word = ({ par: 'paralyzed', psn: 'poisoned', tox: 'badly poisoned', brn: 'burned', slp: 'put to sleep', frz: 'frozen' } as any)[e.status] ?? e.status; lines.push(`${subj(e.side)} was ${word}${e.cause ? ` by ${e.cause}` : ''}!`); break; }
-        case 'damage': if (e.cause) lines.push(`${subj(e.side)} was hurt by ${/^(psn|tox)$/.test(e.cause) ? 'poison' : e.cause === 'brn' ? 'its burn' : e.cause}!`); break;
-        case 'cure': lines.push(`${subj(e.side)} shook off its ${e.status}.`); break;
-        case 'boost': lines.push(`${poss(e.side)} ${e.stat.toUpperCase()} ${e.amount > 0 ? 'rose' : 'fell'}${Math.abs(e.amount) > 1 ? ' sharply' : ''}${e.cause ? ` (${e.cause})` : ''}!`); break;
-        case 'weather': lines.push(e.weather ? `The weather turned to ${e.weather}.` : 'The weather cleared.'); break;
+        case 'move': lines.push(`${nm(e.side)} used ${e.move}!`); break;
+        case 'status': { const word = ({ par: 'paralyzed', psn: 'poisoned', tox: 'badly poisoned', brn: 'burned', slp: 'put to sleep', frz: 'frozen' } as any)[e.status] ?? e.status; lines.push(`${nm(e.side)} was ${word}${e.cause ? ` by ${cause(e)}` : ''}!`); break; }
+        case 'damage': if (e.cause) lines.push(`${nm(e.side)} was hurt by ${/^(psn|tox)$/.test(e.cause) ? 'poison' : e.cause === 'brn' ? 'its burn' : e.cause}!`); break;
+        case 'cure': lines.push(`${nm(e.side)} shook off its ${e.status}.`); break;
+        case 'boost': lines.push(`${nm(e.side)}'s ${e.stat.toUpperCase()} ${e.amount > 0 ? 'rose' : 'fell'}${Math.abs(e.amount) > 1 ? ' sharply' : ''}${e.cause ? ` (${cause(e)})` : ''}!`); break;
+        case 'weather': lines.push(e.weather ? `The weather turned to ${e.weather}!` : 'The weather cleared.'); break;
         case 'field': if (e.start) lines.push(`${e.effect} set in!`); break;
-        case 'volatile': if (e.start) lines.push(`${subj(e.side)} became ${e.effect}.`); break;
-        case 'ability': lines.push(`${poss(e.side)} ${e.ability} activated!`); break;
-        case 'item': lines.push(e.ended ? `${poss(e.side)} ${e.item} was used up.` : `${poss(e.side)} ${e.item} activated.`); break;
-        case 'cant': lines.push(`${subj(e.side)} ${({ par: "is paralyzed! It can't move!", slp: 'is fast asleep!', frz: 'is frozen solid!', flinch: "flinched and couldn't move!" } as any)[e.reason] ?? "couldn't move!"}`); break;
-        case 'immune': lines.push(`It doesn't affect ${e.side === 'p1' ? 'your Pokémon' : 'the foe'}…`); break;
-        case 'miss': lines.push(`${actor(e.side)} missed!`); break;
+        case 'volatile': if (e.start) lines.push(`${nm(e.side)} became ${e.effect}!`); break;
+        case 'ability': lines.push(`[${name(e.side)}'s ${e.ability}]`); break;
+        case 'item': lines.push(e.ended ? `${nm(e.side)}'s ${e.item} was used up.` : `${nm(e.side)}'s ${e.item} activated!`); break;
+        case 'cant': lines.push(`${nm(e.side)} ${({ par: "is paralyzed! It can't move!", slp: 'is fast asleep!', frz: 'is frozen solid!', flinch: "flinched and couldn't move!" } as any)[e.reason] ?? "couldn't move!"}`); break;
+        case 'immune': lines.push(`It doesn't affect ${nm(e.side)}…`); break;
+        case 'miss': lines.push(`${nm(e.side)}'s attack missed!`); break;
         case 'effectiveness': lines.push(e.kind === 'super' ? "It's super effective!" : "It's not very effective…"); break;
         case 'crit': lines.push('A critical hit!'); break;
         case 'fail': lines.push('But it failed!'); break;
-        case 'faint': lines.push(`${subj(e.side)} fainted!`); break;
+        case 'faint': lines.push(`${nm(e.side)} fainted!`); break;
       }
     }
-    return lines.join(' ') || '…';
+    return lines.map(cap).join(' ') || '…';
   }
 
   async turn(moveIndex: number) {
@@ -135,7 +139,8 @@ class GameSession {
     const view = buildView('p2', b.bridge.state, b.oppTeam, [ownedToSet(this.mon())], b.bridge.getChoices('p2').moves, []);
     const ai = chooseAction(view, { gen: 9, knobs: { randomness: 0.1, lookaheadDepth: 1, switchSmarts: 1 }, personality: { aggression: 1, caution: 0.5 }, rng: makeRng(Date.now()) });
     const res = await b.bridge.submitTurn({ kind: 'move', index: moveIndex }, ai);
-    b.log = this.narrate(res.events);
+    const name = (side: string) => b.bridge.state.active[side as 'p1' | 'p2']?.species ?? (side === 'p1' ? 'Your Pokémon' : 'the foe');
+    b.log = this.narrate(res.events, name);
     if (b.bridge.state.winner) return this.finish();
     return this.battleView();
   }
