@@ -23,10 +23,6 @@ function seeded(seed: number, n: number): number {
   return x - Math.floor(x);
 }
 
-/** Clamp a value between min and max. */
-function clamp(v: number, lo: number, hi: number): number {
-  return Math.max(lo, Math.min(hi, v));
-}
 
 /** Linear interpolation. */
 function lerp(a: number, b: number, t: number): number {
@@ -39,38 +35,35 @@ function lerp(a: number, b: number, t: number): number {
 export function makeTree(seed = 0): THREE.Group {
   const group = new THREE.Group();
 
-  const lean = (seeded(seed, 0) - 0.5) * 0.15; // slight tilt
-  const trunkH = lerp(0.6, 0.9, seeded(seed, 1));
-  const trunkR = lerp(0.08, 0.13, seeded(seed, 2));
+  const trunkH = lerp(0.45, 0.62, seeded(seed, 1));
+  const trunkR = lerp(0.1, 0.14, seeded(seed, 2));
 
-  // Trunk
-  const trunkGeo = new THREE.CylinderGeometry(trunkR * 0.6, trunkR, trunkH, 6, 1);
-  const trunk = new THREE.Mesh(trunkGeo, mat('#7a5230'));
-  trunk.position.set(lean * 0.5, trunkH / 2, 0);
-  trunk.rotation.z = lean;
-  trunk.castShadow = true;
-  trunk.receiveShadow = true;
+  // Trunk — tapered, a touch of lean
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(trunkR * 0.7, trunkR, trunkH, 7), mat('#6b4a2f'));
+  trunk.position.y = trunkH / 2;
+  trunk.rotation.z = (seeded(seed, 0) - 0.5) * 0.08;
+  trunk.castShadow = true; trunk.receiveShadow = true;
   group.add(trunk);
 
-  // Foliage layers
-  const foliageCount = Math.floor(lerp(2, 4, seeded(seed, 3)));
-  const greens = ['#5fae3c', '#4c9a32', '#3c8a2a', '#6bbf4a'];
-  const totalFoliageH = lerp(1.0, 1.5, seeded(seed, 4));
+  // Canopy — a cohesive rounded two-tone dome (detail-1 icosahedra = smooth low-poly),
+  // a wide darker base mass topped by a lighter dome. Reads as a real tree, not blobs.
+  const lights = ['#6cbf4a', '#74c957', '#62b63f'];
+  const lightG = lights[Math.floor(seeded(seed, 3) * lights.length)];
+  const darkG = '#3f8f2c';
+  const r = lerp(0.58, 0.74, seeded(seed, 4));
+  const baseY = trunkH + r * 0.55;
 
-  for (let i = 0; i < foliageCount; i++) {
-    const t = i / (foliageCount - 1 || 1);
-    const radius = lerp(0.7, 0.35, t) * (0.9 + seeded(seed, 10 + i) * 0.2);
-    const geo = new THREE.IcosahedronGeometry(radius, 0);
-    const mesh = new THREE.Mesh(geo, mat(greens[Math.floor(seeded(seed, 20 + i) * greens.length)]));
-    mesh.position.set(
-      lean * (0.5 + t * 0.5) + (seeded(seed, 30 + i) - 0.5) * 0.15,
-      trunkH + t * totalFoliageH - 0.15,
-      (seeded(seed, 40 + i) - 0.5) * 0.2,
-    );
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    group.add(mesh);
-  }
+  const lower = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 1), mat(darkG));
+  lower.scale.set(1.18, 0.82, 1.18); lower.position.y = baseY;
+  lower.rotation.y = seeded(seed, 5) * Math.PI;
+  lower.castShadow = true; lower.receiveShadow = true;
+  group.add(lower);
+
+  const upper = new THREE.Mesh(new THREE.IcosahedronGeometry(r * 0.82, 1), mat(lightG));
+  upper.scale.set(1.0, 0.92, 1.0); upper.position.y = baseY + r * 0.42;
+  upper.rotation.y = seeded(seed, 6) * Math.PI + 0.6;
+  upper.castShadow = true; upper.receiveShadow = true;
+  group.add(upper);
 
   return group;
 }
@@ -99,8 +92,8 @@ export function makePineTree(seed = 0): THREE.Group {
     const t = i / (tierCount - 1 || 1);
     const radius = lerp(0.65, 0.15, t) * (0.9 + seeded(seed, 10 + i) * 0.2);
     const h = totalH / tierCount * 1.1;
-    const geo = new THREE.ConeGeometry(radius, h, 7, 1);
-    const shade = i % 2 === 0 ? '#3a7a28' : '#4c8a32';
+    const geo = new THREE.ConeGeometry(radius, h, 9, 1);
+    const shade = i % 2 === 0 ? '#357324' : '#46862e';
     const mesh = new THREE.Mesh(geo, mat(shade));
     mesh.position.y = baseY + t * (totalH - trunkH) + h * 0.3;
     mesh.castShadow = true;
