@@ -35,6 +35,7 @@ export class OverworldScreen3D {
   private facing: 'up' | 'down' | 'left' | 'right' = 'down';
 
   private player = new THREE.Group();
+  private legL!: THREE.Mesh; private legR!: THREE.Mesh; private armL!: THREE.Mesh; private armR!: THREE.Mesh;
   private pvis = { x: 0, z: 0 };          // smoothed player world position
   private cam = new THREE.Vector3();
   private bob = 0;
@@ -115,15 +116,30 @@ export class OverworldScreen3D {
   // ---- builders -----------------------------------------------------------
 
   private buildPlayer() {
-    const mk = (geo: THREE.BufferGeometry, color: number, y: number) => {
-      const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, roughness: 0.8 }));
-      m.position.y = y; m.castShadow = true; return m;
-    };
-    this.player.add(mk(new THREE.CapsuleGeometry(0.22, 0.32, 4, 10), 0xe0533a, 0.42)); // body (red)
-    this.player.add(mk(new THREE.SphereGeometry(0.2, 16, 14), 0xf2c9a0, 0.82));          // head
-    const cap = mk(new THREE.SphereGeometry(0.22, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2), 0x7a2d20, 0.9);
-    this.player.add(cap);                                                                 // cap
-    this.player.add(mk(new THREE.BoxGeometry(0.12, 0.28, 0.12), 0x33405a, 0.16));         // legs block
+    const M = (c: number) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.85, flatShading: true });
+    const skin = M(0xf2c9a0), jacket = M(0xd83b2f), pants = M(0x33405a), pack = M(0xe0b84a), shoe = M(0x2a2a2a);
+    const part = (geo: THREE.BufferGeometry, m: THREE.Material, y = 0) => { const o = new THREE.Mesh(geo, m); o.position.y = y; o.castShadow = true; return o; };
+    // limbs pivot from the top (hip/shoulder): translate geometry down so origin = pivot
+    const limb = (rad: number, len: number, m: THREE.Material) => { const g = new THREE.CapsuleGeometry(rad, len, 3, 6); g.translate(0, -(len / 2 + rad), 0); const o = new THREE.Mesh(g, m); o.castShadow = true; return o; };
+
+    // legs (pivot ~hip y=0.34)
+    this.legL = limb(0.07, 0.2, pants); this.legL.position.set(-0.1, 0.36, 0);
+    this.legR = limb(0.07, 0.2, pants); this.legR.position.set(0.1, 0.36, 0);
+    this.legL.add(part(new THREE.BoxGeometry(0.11, 0.07, 0.17), shoe, -0.34)); // shoe at foot
+    this.legR.add(part(new THREE.BoxGeometry(0.11, 0.07, 0.17), shoe, -0.34));
+    // torso (jacket)
+    const torso = part(new THREE.CapsuleGeometry(0.17, 0.22, 4, 8), jacket, 0.6);
+    // backpack
+    const bag = part(new THREE.BoxGeometry(0.24, 0.28, 0.13), pack, 0.6); bag.position.z = -0.16;
+    // arms (pivot ~shoulder y=0.74)
+    this.armL = limb(0.05, 0.16, jacket); this.armL.position.set(-0.21, 0.74, 0);
+    this.armR = limb(0.05, 0.16, jacket); this.armR.position.set(0.21, 0.74, 0);
+    // head + cap + brim
+    const head = part(new THREE.SphereGeometry(0.155, 16, 14), skin, 0.92);
+    const cap = part(new THREE.SphereGeometry(0.165, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2), jacket, 0.97);
+    const brim = part(new THREE.BoxGeometry(0.27, 0.04, 0.16), jacket, 0.95); brim.position.z = 0.14;
+
+    this.player.add(this.legL, this.legR, torso, bag, this.armL, this.armR, head, cap, brim);
   }
 
   private character(color: number): THREE.Group {
@@ -218,9 +234,13 @@ export class OverworldScreen3D {
     this.pvis.x += (p.x - this.pvis.x) * 0.2;
     this.pvis.z += (p.y - this.pvis.z) * 0.2;
     this.bob *= 0.85;
-    this.player.position.set(this.pvis.x, Math.abs(Math.sin(performance.now() / 90)) * this.bob * 0.12, this.pvis.z);
+    this.player.position.set(this.pvis.x, Math.abs(Math.sin(performance.now() / 90)) * this.bob * 0.1, this.pvis.z);
     const faceAngle = { down: 0, up: Math.PI, left: Math.PI / 2, right: -Math.PI / 2 }[this.facing];
     this.player.rotation.y += (faceAngle - this.player.rotation.y) * 0.3;
+    // walk cycle: swing limbs while a step is in progress (bob decays after each step)
+    const swing = Math.sin(performance.now() / 80) * Math.min(this.bob, 1) * 0.7;
+    this.legL.rotation.x = swing; this.legR.rotation.x = -swing;
+    this.armL.rotation.x = -swing * 0.8; this.armR.rotation.x = swing * 0.8;
 
     // follow camera (tilted 3/4, Let's Go-ish)
     const target = new THREE.Vector3(this.pvis.x, 0.7, this.pvis.z);
