@@ -169,6 +169,12 @@ export class OverworldScreen3D {
           if (seed % 7 === 0) { const b = makeBush(seed + 2); b.position.set(-0.25, 0, -0.2); g.add(b); }
           obj = g;
         }
+        else if (t === 'field') {
+          // open grass ground: bare (ground plane shows), with the odd flower/tuft for life
+          if (seed % 23 === 0) obj = makeFlower(seed);
+          else if (seed % 17 === 0) obj = makeGrassTuft(seed);
+          else continue;
+        }
         else if (t === 'center') obj = makePokemonCenter();
         else if (t === 'shop') obj = makeMart();
         else if (t === 'gym') obj = makeGym();
@@ -189,8 +195,9 @@ export class OverworldScreen3D {
     const W = this.mapW, H = this.mapH;
     const rand = (n: number) => { const x = Math.sin(n * 131.7) * 1e4; return x - Math.floor(x); };
     let i = 1000;
-    for (let gx = -8; gx <= W + 8; gx++) {
-      for (let gz = -8; gz <= H + 8; gz++) {
+    const band = 5; // depth of forest beyond the map's own tree border
+    for (let gx = -band; gx <= W + band; gx++) {
+      for (let gz = -band; gz <= H + band; gz++) {
         if (gx >= -1 && gx <= W && gz >= -1 && gz <= H) continue; // keep the play area clear
         const r = rand(gx * 73.1 + gz * 19.7);
         const x = gx + (rand(i * 3 + 1) - 0.5) * 0.6, z = gz + (rand(i * 3 + 2) - 0.5) * 0.6;

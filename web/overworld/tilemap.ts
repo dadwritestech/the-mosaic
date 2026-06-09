@@ -1,4 +1,4 @@
-export type Tile = 'floor' | 'grass' | 'wall' | 'exit' | 'gym' | 'npc' | 'center' | 'shop';
+export type Tile = 'field' | 'floor' | 'grass' | 'wall' | 'exit' | 'gym' | 'npc' | 'center' | 'shop';
 export interface TileMeta { exitTo?: string; gymId?: string; npcId?: string; }
 export interface TileMap { id: string; tiles: Tile[][]; spawn: { x: number; y: number }; meta: Record<string, TileMeta>; biome: string; }
 
