@@ -14,6 +14,18 @@ function gltfLoader(): GLTFLoader {
   return _gltf;
 }
 
+// Load a CC0 GLTF asset (e.g. KayKit), normalized to targetHeight and grounded.
+export async function loadKit(path: string, targetHeight = 2): Promise<THREE.Object3D> {
+  const gltf = await gltfLoader().loadAsync(path);
+  const root = gltf.scene;
+  root.traverse((o: any) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; if (o.material) o.material.metalness = 0; } });
+  const size = new THREE.Vector3(); new THREE.Box3().setFromObject(root).getSize(size);
+  root.scale.setScalar(targetHeight / Math.max(size.y, 0.001));
+  const grounded = new THREE.Box3().setFromObject(root);
+  root.position.y -= grounded.min.y;
+  return root;
+}
+
 export interface LoadedModel { root: THREE.Object3D; mixer: THREE.AnimationMixer | null; }
 
 // Load a real 3D Pokémon model, normalized to `targetHeight` units and grounded.

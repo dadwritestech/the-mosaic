@@ -5,7 +5,7 @@ import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { makeTree, makePineTree, makeGrassTuft, makeFlower, makeBush, makeRock } from './props';
-import { makePokemonCenter, makeMart, makeGym, makeHouse } from './buildings';
+import { loadKit } from '../battle/creature';
 import type { View } from '../net';
 
 // 3D overworld in the Let's Go spirit: a grassy field under a tilted 3/4 camera,
@@ -47,6 +47,10 @@ export class OverworldScreen3D {
   private villagers: { obj: THREE.Object3D; x: number; z: number; tx: number; tz: number; spd: number }[] = [];
   private timeKey = '';
   private lastT = performance.now();
+  // real CC0 (KayKit) model templates, cloned per placement
+  private kitCache = new Map<string, THREE.Object3D>();
+  private readonly TREES = ['/kit/nature/tree_single_A.gltf', '/kit/nature/tree_single_B.gltf', '/kit/nature/trees_A_medium.gltf', '/kit/nature/trees_B_medium.gltf', '/kit/nature/trees_A_small.gltf'];
+  private readonly ROCKS = ['/kit/nature/rock_single_A.gltf', '/kit/nature/rock_single_B.gltf', '/kit/nature/rock_single_C.gltf'];
 
   private tileGroup = new THREE.Group();
   private builtLocation = '';
@@ -121,6 +125,26 @@ export class OverworldScreen3D {
 
     this.running = true;
     this.loop();
+    this.preloadKit();
+  }
+
+  // Preload tree/rock models once; re-place the current area when ready.
+  private async preloadKit() {
+    await Promise.all([
+      ...this.TREES.map((p) => this.cacheKit(p, 2.0)),
+      ...this.ROCKS.map((p) => this.cacheKit(p, 0.6)),
+    ]);
+    if (this.view) this.rebuildTiles(this.view);
+  }
+  private async cacheKit(path: string, h: number) {
+    if (this.kitCache.has(path)) return;
+    try { this.kitCache.set(path, await loadKit(path, h)); } catch { /* missing */ }
+  }
+  private kitClone(path: string): THREE.Object3D | null {
+    const t = this.kitCache.get(path); if (!t) return null;
+    const c = t.clone(true);
+    c.traverse((o: any) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    return c;
   }
 
   // ---- builders -----------------------------------------------------------
@@ -187,7 +211,7 @@ export class OverworldScreen3D {
     const P: Record<string, { sky: number; fog: number; sunC: number; sunI: number; hemiI: number; ground: number; partC: number; partO: number }> = {
       morning: { sky: 0xd8ecff, fog: 0xdfeeff, sunC: 0xffe6c4, sunI: 1.05, hemiI: 1.1, ground: 0x6a9a4a, partC: 0xfff0c0, partO: 0.5 },
       day:     { sky: 0xbfeaff, fog: 0xbfeaff, sunC: 0xfff4e0, sunI: 1.2, hemiI: 1.2, ground: 0x6a9a4a, partC: 0xffffff, partO: 0.35 },
-      night:   { sky: 0x24345e, fog: 0x2a3a60, sunC: 0x95a2d8, sunI: 0.55, hemiI: 0.8, ground: 0x2c3a55, partC: 0xfff3a0, partO: 0.95 },
+      night:   { sky: 0x3a4e7e, fog: 0x42578a, sunC: 0xb3bfe8, sunI: 0.8, hemiI: 1.05, ground: 0x40527a, partC: 0xfff3a0, partO: 0.95 },
     };
     const p = P[time] ?? P.day;
     (this.scene.background as THREE.Color).set(p.sky);
@@ -222,7 +246,7 @@ export class OverworldScreen3D {
         const t = tiles[y][x];
         const seed = x * 37 + y * 101;
         let obj: THREE.Object3D | null = null;
-        if (t === 'wall') obj = (seed % 5 === 0) ? makePineTree(seed) : makeTree(seed);
+        if (t === 'wall') { obj = this.kitClone(this.TREES[seed % this.TREES.length]) ?? ((seed % 5 === 0) ? makePineTree(seed) : makeTree(seed)); obj.rotation.y = (seed % 4) * Math.PI / 2; }
         else if (t === 'grass') {
           // tall-grass tile: a grass tuft, sometimes a flower or bush for life
           const g = new THREE.Group(); g.add(makeGrassTuft(seed));
@@ -236,9 +260,9 @@ export class OverworldScreen3D {
           else if (seed % 17 === 0) { obj = makeGrassTuft(seed); this.swayables.push(obj); }
           else continue;
         }
-        else if (t === 'center') obj = makePokemonCenter();
-        else if (t === 'shop') obj = makeMart();
-        else if (t === 'gym') obj = makeGym();
+        else if (t === 'center') { this.placeKit('building_C', x, y, 2.6); continue; }
+        else if (t === 'shop') { this.placeKit('building_B', x, y, 2.4); continue; }
+        else if (t === 'gym') { this.placeKit('building_G', x, y, 3.0); continue; }
         else if (t === 'npc') obj = this.character(0x5a8fd6);
         else if (t === 'floor' || t === 'exit') {
           const path = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.06, 0.98), new THREE.MeshStandardMaterial({ color: t === 'exit' ? '#e6cf86' : '#d9c28c' }));
@@ -264,18 +288,29 @@ export class OverworldScreen3D {
         const r = rand(gx * 73.1 + gz * 19.7);
         const x = gx + (rand(i * 3 + 1) - 0.5) * 0.6, z = gz + (rand(i * 3 + 2) - 0.5) * 0.6;
         let obj: THREE.Object3D | null = null;
-        if (r < 0.5) obj = r < 0.1 ? makePineTree(i) : makeTree(i);   // dense tree-line
-        else if (r < 0.58) obj = makeRock(i);
+        if (r < 0.5) { obj = this.kitClone(this.TREES[i % this.TREES.length]) ?? makeTree(i); obj.rotation.y = (i % 4) * Math.PI / 2; }  // dense tree-line
+        else if (r < 0.58) obj = this.kitClone(this.ROCKS[i % this.ROCKS.length]) ?? makeRock(i);
         else if (r < 0.64) obj = makeFlower(i);
         else if (r < 0.72) obj = makeGrassTuft(i);
         if (obj) { obj.position.set(x, 0, z); this.tileGroup.add(obj); }
         i++;
       }
     }
-    // a few cottages just outside the play area for a village feel
-    for (const [hx, hz, hs] of [[-3, 2, 1], [W + 2.5, H - 2, 2], [-2.5, H + 3, 3]] as const) {
-      const h = makeHouse(hs); h.position.set(hx, 0, hz); h.rotation.y = (rand(hs * 11) - 0.5) * 0.6; this.tileGroup.add(h);
-    }
+    // a few real cottages just outside the play area for a village feel
+    const houses = ['building_A', 'building_D', 'building_E', 'building_H'];
+    [[-3, 2], [W + 2.5, H - 2], [-2.5, H + 3], [W + 3, 3]].forEach(([hx, hz], k) => this.placeKit(houses[k % houses.length], hx, hz, 2.2));
+  }
+
+  // Load a real CC0 (KayKit) building model and drop it at a tile, grounded.
+  // Async — guarded against the location changing while it loads.
+  private async placeKit(name: string, x: number, y: number, h: number) {
+    const loc = this.builtLocation;
+    try {
+      const m = await loadKit(`/kit/city/${name}.gltf`, h);
+      if (this.builtLocation !== loc) return;
+      m.position.set(x, 0, y);
+      this.tileGroup.add(m);
+    } catch { /* asset missing — skip */ }
   }
 
   // ---- frame --------------------------------------------------------------
