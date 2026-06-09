@@ -11,3 +11,8 @@ export function spriteUrl(species: string, side: 'front' | 'back'): string {
 export function homeUrl(dexNum: number): string {
   return `/home/${dexNum}.png`;
 }
+
+// Real Draco-compressed GLB 3D model (often animated), keyed by national dex number.
+export function modelUrl(dexNum: number): string {
+  return `/models3d/${dexNum}.glb`;
+}

@@ -3,7 +3,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { loadHomeBillboard } from '../battle/creature';
+import { loadModel, loadHomeBillboard } from '../battle/creature';
 import type { View } from '../net';
 
 // 3D overworld in the Let's Go spirit: a grassy field under a tilted 3/4 camera,
@@ -29,7 +29,7 @@ function grassTexture(): THREE.Texture {
   return t;
 }
 
-interface Roamer { obj: THREE.Object3D; x: number; z: number; tx: number; tz: number; speed: number; }
+interface Roamer { obj: THREE.Object3D; mixer: THREE.AnimationMixer | null; x: number; z: number; tx: number; tz: number; speed: number; }
 
 export class OverworldScreen3D {
   private renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -48,6 +48,7 @@ export class OverworldScreen3D {
   private builtLocation = '';
   private mapW = 9; private mapH = 6;
   private roamers: Roamer[] = [];
+  private lastT = performance.now();
   private running = false;
 
   // DOM HUD
@@ -200,16 +201,18 @@ export class OverworldScreen3D {
     for (const r of this.roamers) this.scene.remove(r.obj);
     this.roamers = [];
     const inside = (n: number) => 1 + Math.random() * (n - 2);
-    const picks = SHOWCASE.slice().sort(() => Math.random() - .5).slice(0, 7);
+    const picks = SHOWCASE.slice().sort(() => Math.random() - .5).slice(0, 6);
     for (const [, num] of picks) {
+      const x = inside(this.mapW), z = inside(this.mapH);
       try {
-        const obj = await loadHomeBillboard(num);
-        obj.scale.set(1.7, 1.7, 1);
-        const x = inside(this.mapW), z = inside(this.mapH);
-        obj.position.set(x, 0.85, z);
+        // Real animated 3D model first; fall back to a crisp HOME billboard.
+        let obj: THREE.Object3D, mixer: THREE.AnimationMixer | null = null;
+        try { const m = await loadModel(num, 1.4); obj = m.root; mixer = m.mixer; }
+        catch { obj = await loadHomeBillboard(num); obj.scale.set(1.7, 1.7, 1); obj.position.y = 0.85; }
+        obj.position.x = x; obj.position.z = z;
         this.scene.add(obj);
-        this.roamers.push({ obj, x, z, tx: x, tz: z, speed: 0.3 + Math.random() * 0.3 });
-      } catch { /* render missing — skip */ }
+        this.roamers.push({ obj, mixer, x, z, tx: x, tz: z, speed: 0.3 + Math.random() * 0.3 });
+      } catch { /* asset missing — skip */ }
     }
   }
 
@@ -249,13 +252,19 @@ export class OverworldScreen3D {
     this.camera.position.copy(this.cam);
     this.camera.lookAt(target);
 
-    // roamers wander
-    const now = performance.now() / 1000;
+    // roamers wander + play their idle/walk animation
+    const nowMs = performance.now();
+    const dt = Math.min(0.05, (nowMs - this.lastT) / 1000); this.lastT = nowMs;
+    const isSprite = (o: THREE.Object3D) => (o as any).isSprite === true;
     for (const r of this.roamers) {
+      r.mixer?.update(dt);
       const dx = r.tx - r.x, dz = r.tz - r.z; const dist = Math.hypot(dx, dz);
       if (dist < 0.1) { r.tx = 1 + Math.random() * (this.mapW - 2); r.tz = 1 + Math.random() * (this.mapH - 2); }
-      else { r.x += (dx / dist) * r.speed * 0.02; r.z += (dz / dist) * r.speed * 0.02; }
-      r.obj.position.set(r.x, 0.75 + Math.sin(now * 2 + r.x) * 0.05, r.z);
+      else {
+        r.x += (dx / dist) * r.speed * 0.02; r.z += (dz / dist) * r.speed * 0.02;
+        if (!isSprite(r.obj)) { const want = Math.atan2(dx, dz); r.obj.rotation.y += (want - r.obj.rotation.y) * 0.1; }
+      }
+      r.obj.position.x = r.x; r.obj.position.z = r.z; // grounded models keep y=0; sprites set their own y
     }
 
     this.composer.render();
