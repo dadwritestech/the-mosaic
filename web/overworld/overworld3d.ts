@@ -5,6 +5,7 @@ import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { makeTree, makePineTree, makeGrassTuft, makeFlower, makeBush, makeRock } from './props';
+import { makePokemonCenter, makeMart, makeGym, makeHouse } from './buildings';
 import type { View } from '../net';
 
 // 3D overworld in the Let's Go spirit: a grassy field under a tilted 3/4 camera,
@@ -133,17 +134,6 @@ export class OverworldScreen3D {
     return g;
   }
 
-  private building(roof: number): THREE.Group {
-    const g = new THREE.Group();
-    const wall = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.6, 0.82), new THREE.MeshStandardMaterial({ color: 0xe9e3d6 }));
-    wall.position.y = 0.3; wall.castShadow = true; wall.receiveShadow = true; g.add(wall);
-    const roofMesh = new THREE.Mesh(new THREE.ConeGeometry(0.72, 0.4, 4), new THREE.MeshStandardMaterial({ color: roof }));
-    roofMesh.position.y = 0.8; roofMesh.rotation.y = Math.PI / 4; roofMesh.castShadow = true; g.add(roofMesh);
-    const door = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.3, 0.04), new THREE.MeshStandardMaterial({ color: 0x5a4633 }));
-    door.position.set(0, 0.15, 0.42); g.add(door);
-    return g;
-  }
-
   // ---- tiles --------------------------------------------------------------
 
   private rebuildTiles(view: View) {
@@ -163,9 +153,9 @@ export class OverworldScreen3D {
           if (seed % 7 === 0) { const b = makeBush(seed + 2); b.position.set(-0.25, 0, -0.2); g.add(b); }
           obj = g;
         }
-        else if (t === 'center') obj = this.building(0xe0533a);
-        else if (t === 'shop') obj = this.building(0x3a7bd6);
-        else if (t === 'gym') obj = this.building(0x9a55c8);
+        else if (t === 'center') obj = makePokemonCenter();
+        else if (t === 'shop') obj = makeMart();
+        else if (t === 'gym') obj = makeGym();
         else if (t === 'npc') obj = this.character(0x5a8fd6);
         else if (t === 'floor' || t === 'exit') {
           const path = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.06, 0.98), new THREE.MeshStandardMaterial({ color: t === 'exit' ? '#e6cf86' : '#d9c28c' }));
@@ -196,6 +186,10 @@ export class OverworldScreen3D {
         if (obj) { obj.position.set(x, 0, z); this.tileGroup.add(obj); }
         i++;
       }
+    }
+    // a few cottages just outside the play area for a village feel
+    for (const [hx, hz, hs] of [[-3, 2, 1], [W + 2.5, H - 2, 2], [-2.5, H + 3, 3]] as const) {
+      const h = makeHouse(hs); h.position.set(hx, 0, hz); h.rotation.y = (rand(hs * 11) - 0.5) * 0.6; this.tileGroup.add(h);
     }
   }
 
