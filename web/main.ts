@@ -39,7 +39,7 @@ function render(view: any) {
     canvas.style.display = 'none';
     menu.clear();
     if (!battle) {
-      battle = new BattleScreen(root, (kind, index) => send(kind, kind === 'turn' ? { index } : {}));
+      battle = new BattleScreen(root, (cmd, body) => send(cmd, body ?? {}));
     }
     void battle.render(view);
   }

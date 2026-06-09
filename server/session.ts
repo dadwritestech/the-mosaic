@@ -2,7 +2,7 @@
 // The browser is a thin client; it never imports this or src/.
 import type { GameState } from '../src/game/types';
 import { createNewGame, addToParty, grantBadge, swapPartyMembers, addMoney, addItem } from '../src/game/game-state';
-import { createOwned } from '../src/game/owned-pokemon';
+import { createOwned, setHp } from '../src/game/owned-pokemon';
 import { advanceStep, timeOfDay } from '../src/game/clock';
 import { wildMoveset } from '../src/game/learnset';
 import { rollEncounter } from '../src/content/encounters';
@@ -22,7 +22,7 @@ import { applyBattleResult } from '../src/game/battle-result';
 import { recordTrainerDefeat } from '../src/game/rematch';
 import { maxHp } from '../src/game/stats';
 import { makeRng } from '../src/ai/rng';
-import type { PokemonSet } from '../src/bridge/types';
+import type { PokemonSet, Action, BallType } from '../src/bridge/types';
 import * as Sim from 'pokemon-showdown';
 import { SLICE_MAPS } from '../web/overworld/maps/slice';
 import { tileAt, isWalkable, metaAt, type TileMap } from '../web/overworld/tilemap';
@@ -31,7 +31,11 @@ interface BattleCtx {
   bridge: BattleBridge; isWild: boolean; oppTeam: PokemonSet[];
   defeated: { species: string; level: number }[];
   gymId?: string; log: string;
+  activeIdx: number;              // which party slot is currently on the field (p1)
+  participants: Set<string>;      // uids that were ever active — for exp distribution
 }
+
+const BALL_ITEM: Record<string, string> = { poke: 'pokeball', great: 'greatball', ultra: 'ultraball', master: 'masterball' };
 
 class GameSession {
   state: GameState;
@@ -45,6 +49,8 @@ class GameSession {
   constructor() {
     let g = addToParty(createNewGame({ difficultyMode: 'normal', nuzlocke: false }),
       createOwned({ species: 'Pikachu', level: 8, moves: ['thunderbolt', 'quickattack', 'irontail', 'thunderwave'], nature: 'Timid' }));
+    // A second party member so switching is usable from the start.
+    g = addToParty(g, createOwned({ species: 'Eevee', level: 8, moves: wildMoveset('Eevee', 8), nature: 'Jolly' }));
     // Starter wallet + supplies so the shop/bag/Center loop is usable from the first step.
     g = addMoney(g, 3000);
     g = addItem(g, 'medicine', 'potion', 5);
@@ -54,7 +60,6 @@ class GameSession {
     const m = this.map(); this.px = m.spawn.x; this.py = m.spawn.y;
   }
   private map(): TileMap { return SLICE_MAPS[this.locationId]; }
-  private mon() { return this.state.party[0]; }
 
   view() {
     if (this.battle) return this.battleView();
@@ -212,34 +217,51 @@ class GameSession {
     return this.view();
   }
 
+  private playerTeam(): PokemonSet[] { return this.state.party.map((p) => ownedToSet(p)); }
+  private activeMon() { return this.state.party[this.battle?.activeIdx ?? 0]; }
+
   private async startWild(species: string, level: number) {
     const wild = createOwned({ species, level, moves: wildMoveset(species, level) });
     const bridge = new BattleBridge();
-    await bridge.startBattle([ownedToSet(this.mon())], [ownedToSet(wild)], { formatid: 'gen9customgame', isWild: true });
-    this.battle = { bridge, isWild: true, oppTeam: [ownedToSet(wild)], defeated: [{ species, level }], log: `A wild ${species} appeared!` };
+    await bridge.startBattle(this.playerTeam(), [ownedToSet(wild)], { formatid: 'gen9customgame', isWild: true, initialConditions: { p1: this.carryConditions() } });
+    this.battle = { bridge, isWild: true, oppTeam: [ownedToSet(wild)], defeated: [{ species, level }], log: `A wild ${species} appeared!`, activeIdx: 0, participants: new Set([this.state.party[0].uid]) };
     return this.battleView();
   }
   private async startGym(gymId: string) {
     const gym = getGym(gymId);
     const team = composeTeam(gym.trainer, { gen: 9, counterDraftStrength: 0.3, rng: makeRng(7) });
     const bridge = new BattleBridge();
-    await bridge.startBattle([ownedToSet(this.mon())], team, { formatid: 'gen9customgame' });
-    this.battle = { bridge, isWild: false, oppTeam: team, defeated: team.map((s) => ({ species: s.species, level: s.level })), gymId, log: `${gym.trainer.name} wants to battle!` };
+    await bridge.startBattle(this.playerTeam(), team, { formatid: 'gen9customgame', initialConditions: { p1: this.carryConditions() } });
+    this.battle = { bridge, isWild: false, oppTeam: team, defeated: team.map((s) => ({ species: s.species, level: s.level })), gymId, log: `${gym.trainer.name} wants to battle!`, activeIdx: 0, participants: new Set([this.state.party[0].uid]) };
     return this.battleView();
+  }
+
+  // Carry each party member's persisted HP/status into the battle (no free heal).
+  private carryConditions() {
+    return this.state.party.map((p) => ({ hpPercent: Math.round((p.currentHp / maxHp(p)) * 100), status: p.status ?? '' }));
   }
 
   private battleView() {
     const b = this.battle!; const s = b.bridge.state; const c = b.bridge.getChoices('p1');
     const sideView = (m: any) => ({ species: m.species, hpPercent: m.hpPercent, status: m.status, boosts: m.boosts ?? {}, volatiles: m.volatiles ?? [] });
+    // Bench Pokémon you can switch to (every party slot except the active one).
+    const switches = this.state.party
+      .map((p, i) => ({ index: i + 1, species: p.species, level: p.level, hpPercent: Math.round((p.currentHp / maxHp(p)) * 100), status: p.status ?? '', fainted: p.currentHp <= 0 }))
+      .filter((_, i) => i !== b.activeIdx);
+    // Balls you actually own (so catching consumes real inventory).
+    const balls = Object.entries(BALL_ITEM)
+      .map(([ballType, itemId]) => ({ ballType, name: getItem(itemId).name, count: this.state.bag.balls?.[itemId] ?? 0 }))
+      .filter((x) => x.count > 0);
     return {
       screen: 'battle' as const, isWild: b.isWild,
-      self: { ...sideView(s.active.p1), level: this.mon().level, heldItem: this.mon().heldItem ?? '' },
+      self: { ...sideView(s.active.p1), level: this.activeMon().level, heldItem: this.activeMon().heldItem ?? '' },
       foe: { ...sideView(s.active.p2) },
       weather: s.weather ?? '', terrain: s.terrain ?? '',
       moves: c.moves.map((mo: { index: number; id: string; name: string; pp: number; maxpp: number }) => {
         const md = (Sim.Dex as any).forGen(9).moves.get(mo.id);
         return { index: mo.index, name: mo.name, type: md.type, category: md.category, pp: mo.pp, maxpp: mo.maxpp };
       }),
+      switches, balls,
       canCatch: c.canCatch, log: b.log,
       done: s.winner !== undefined ? (s.winner === 'p1' ? 'win' : 'loss') : null,
     };
@@ -274,32 +296,67 @@ class GameSession {
     return lines.map(cap).join(' ') || '…';
   }
 
-  async turn(moveIndex: number) {
-    const b = this.battle; if (!b) return this.view();
-    const view = buildView('p2', b.bridge.state, b.oppTeam, [ownedToSet(this.mon())], b.bridge.getChoices('p2').moves, []);
-    const ai = chooseAction(view, { gen: 9, knobs: { randomness: 0.1, lookaheadDepth: 1, switchSmarts: 1 }, personality: { aggression: 1, caution: 0.5 }, rng: makeRng(Date.now()) });
-    const res = await b.bridge.submitTurn({ kind: 'move', index: moveIndex }, ai);
+  // The AI's choice for p2, given its (omniscient in PvE) view of the battle.
+  private aiAction(): Action {
+    const b = this.battle!;
+    const view = buildView('p2', b.bridge.state, b.oppTeam, this.playerTeam(), b.bridge.getChoices('p2').moves, []);
+    return chooseAction(view, { gen: 9, knobs: { randomness: 0.1, lookaheadDepth: 1, switchSmarts: 1 }, personality: { aggression: 1, caution: 0.5 }, rng: makeRng(Date.now()) });
+  }
+  // Submit one full turn (player action vs AI action) and narrate the result.
+  private async resolve(p1Action: Action) {
+    const b = this.battle!;
+    const res = await b.bridge.submitTurn(p1Action, this.aiAction());
     const name = (side: string) => b.bridge.state.active[side as 'p1' | 'p2']?.species ?? (side === 'p1' ? 'Your Pokémon' : 'the foe');
     b.log = this.narrate(res.events, name);
+    return res;
+  }
+
+  async turn(moveIndex: number) {
+    const b = this.battle; if (!b) return this.view();
+    await this.resolve({ kind: 'move', index: moveIndex });
     if (b.bridge.state.winner) return this.finish();
     return this.battleView();
   }
-  async catch() {
+
+  async switchMon(index: number) {
     const b = this.battle; if (!b) return this.view();
-    const r = b.bridge.attemptCatch('ultra');
-    if (r.caught) { b.log = `Caught ${b.bridge.state.active.p2!.species}!`; return this.finish('caught'); }
-    b.log = 'The Pokémon broke free!';
-    return this.turn(1);
+    const target = this.state.party[index - 1];
+    if (index - 1 === b.activeIdx || !target) return this.battleView();
+    if (target.currentHp <= 0) { b.log = `${target.species} has no energy left to battle!`; return this.battleView(); }
+    await this.resolve({ kind: 'switch', index });
+    b.activeIdx = index - 1; b.participants.add(target.uid);
+    if (b.bridge.state.winner) return this.finish();
+    return this.battleView();
+  }
+
+  async catch(ball: string = 'poke') {
+    const b = this.battle; if (!b) return this.view();
+    if (!b.isWild) { b.log = "You can't catch another trainer's Pokémon!"; return this.battleView(); }
+    const itemId = BALL_ITEM[ball] ?? 'pokeball';
+    if ((this.state.bag.balls?.[itemId] ?? 0) <= 0) { b.log = `You don't have any ${getItem(itemId).name}s!`; return this.battleView(); }
+    this.state = this.consume(this.state, 'balls', itemId);
+    const foe = b.bridge.state.active.p2!.species;
+    const r = b.bridge.attemptCatch(ball as BallType);
+    if (r.caught) { b.log = `Gotcha! ${foe} was caught!`; return this.finish('caught'); }
+    b.log = `Oh no! The wild ${foe} broke free!`;
+    await this.resolve({ kind: 'move', index: 1 }); // a failed throw costs the turn — the foe acts
+    if (b.bridge.state.winner) return this.finish();
+    return this.battleView();
   }
 
   private finish(catchResult?: 'caught') {
     const b = this.battle!; const won = catchResult === 'caught' || b.bridge.state.winner === 'p1';
-    const p1 = b.bridge.finalConditions().p1[0];
+    const fc = b.bridge.finalConditions().p1; // aligned to party order
+    const finalConditions = this.state.party.map((p, i) => ({
+      uid: p.uid,
+      hpPercent: fc[i]?.hpPercent ?? Math.round((p.currentHp / maxHp(p)) * 100),
+      status: fc[i]?.status ?? (p.status ?? ''),
+    }));
     let msg = '';
     if (won) {
       const out = applyBattleResult(this.state, {
-        won: true, finalConditions: [{ uid: this.mon().uid, hpPercent: p1?.hpPercent ?? 0, status: p1?.status ?? '' }],
-        defeatedTeam: b.defeated, participantUids: [this.mon().uid], isWild: b.isWild,
+        won: true, finalConditions,
+        defeatedTeam: b.defeated, participantUids: Array.from(b.participants), isWild: b.isWild,
         trainer: b.gymId ? { basePayout: getGym(b.gymId).trainer.basePayout, tier: getGym(b.gymId).trainer.baseTier } : undefined,
         rng: makeRng(1),
       });
@@ -307,7 +364,11 @@ class GameSession {
       if (b.gymId) { const gym = getGym(b.gymId); this.state = recordTrainerDefeat(grantBadge(this.state, gym.badgeId), gym.trainer.id); msg = `You earned the ${gym.badgeId} badge!`; }
       else if (catchResult === 'caught') msg = 'Added to your party path.';
       else msg = `You won! +${out.summary.money}₽`;
-    } else { msg = 'You were defeated…'; }
+    } else {
+      // Persist the beating: write back HP/status even on a loss so it matters.
+      this.state = { ...this.state, party: this.state.party.map((p, i) => fc[i] ? { ...setHp(p, Math.round((fc[i].hpPercent / 100) * maxHp(p))), status: fc[i].status } : p) };
+      msg = 'You were defeated… your team needs healing.';
+    }
     this.battle = null; this.message = msg;
     return this.view();
   }
@@ -320,7 +381,8 @@ export async function dispatch(cmd: string, body: any) {
     case 'view': return singleton.view();
     case 'move': return singleton.move(body.dir);
     case 'turn': return singleton.turn(body.index);
-    case 'catch': return singleton.catch();
+    case 'switchMon': return singleton.switchMon(body.index);
+    case 'catch': return singleton.catch(body.ball ?? 'poke');
     case 'menu': return singleton.menu(body.which);
     case 'closeMenu': return singleton.closeMenu();
     case 'swapParty': return singleton.swapParty(body.a, body.b);

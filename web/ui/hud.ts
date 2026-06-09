@@ -1,7 +1,9 @@
 export interface HudMove { index: number; name: string; type?: string; category?: string; pp?: number; maxpp?: number; }
-export interface HudHandlers { onMove: (serverIndex: number) => void; onCatch: () => void; }
+export interface HudSwitch { index: number; species: string; level: number; hpPercent: number; status: string; fainted: boolean; }
+export interface HudBall { ballType: string; name: string; count: number; }
+export interface HudHandlers { onMove: (serverIndex: number) => void; onSwitch: (index: number) => void; onBall: (ballType: string) => void; }
 export interface HudSide { name: string; hp: number; status: string; boosts: Record<string, number>; volatiles: string[]; item?: string; }
-export interface HudState { self: HudSide; foe: HudSide; weather: string; terrain: string; moves: HudMove[]; canCatch: boolean; log: string; }
+export interface HudState { self: HudSide; foe: HudSide; weather: string; terrain: string; moves: HudMove[]; switches: HudSwitch[]; balls: HudBall[]; canCatch: boolean; log: string; }
 
 const STATUS_LABEL: Record<string, string> = { par: 'PAR', psn: 'PSN', tox: 'TOX', brn: 'BRN', slp: 'SLP', frz: 'FRZ' };
 const STATUS_COLOR: Record<string, string> = { par: '#d8a200', psn: '#9a3fb0', tox: '#7a2a8f', brn: '#d8642a', slp: '#7a8694', frz: '#37b0d8' };
@@ -16,6 +18,8 @@ function el(tag: string, style: string, text?: string): HTMLElement {
 
 export class Hud {
   root: HTMLDivElement;
+  private showSwitch = false;
+  private last?: HudState;
   constructor(parent: HTMLElement, private handlers: HudHandlers) {
     this.root = document.createElement('div');
     this.root.style.cssText = 'position:absolute;inset:0;pointer-events:none;font-family:system-ui';
@@ -48,13 +52,33 @@ export class Hud {
     return box;
   }
 
+  private switchPanel(o: HudState): HTMLElement {
+    const box = el('div', 'margin-bottom:8px;background:#1d2940;border:1px solid #33405a;border-radius:8px;padding:8px;display:flex;gap:8px;flex-wrap:wrap');
+    box.appendChild(el('div', 'width:100%;font-size:12px;color:#9fb3d1', 'Switch to:'));
+    o.switches.forEach((s) => {
+      const b = el('button', `pointer-events:auto;background:${s.fainted ? '#3a3a44' : '#2c4a6e'};color:#fff;border:0;border-radius:7px;padding:7px 12px;cursor:${s.fainted ? 'not-allowed' : 'pointer'};display:flex;flex-direction:column;gap:2px;min-width:120px;opacity:${s.fainted ? '.5' : '1'}`);
+      const top = el('div', 'display:flex;justify-content:space-between;gap:8px;font-size:13px;font-weight:600');
+      top.appendChild(el('span', '', `${s.species} L${s.level}`));
+      const badge = this.statusBadge(s.status); if (badge) top.appendChild(badge);
+      b.appendChild(top);
+      b.appendChild(el('div', 'font-size:11px;color:#cbd5e1', s.fainted ? 'fainted' : `HP ${s.hpPercent}%`));
+      if (!s.fainted) b.addEventListener('click', () => { this.showSwitch = false; this.handlers.onSwitch(s.index); });
+      box.appendChild(b);
+    });
+    return box;
+  }
+
   render(o: HudState) {
+    this.last = o;
     const children: HTMLElement[] = [this.bar(o.foe, 'top:16px;left:16px'), this.bar(o.self, 'bottom:160px;right:16px')];
     const fieldBits = [o.weather, o.terrain].filter(Boolean).join(' · ');
     if (fieldBits) children.push(el('div', 'position:absolute;top:16px;left:50%;transform:translateX(-50%);background:rgba(20,30,46,.85);color:#fff;padding:5px 14px;border-radius:14px;font-size:13px', fieldBits));
 
     const panel = el('div', 'position:absolute;bottom:0;left:0;right:0;background:#26354a;padding:10px;color:#fff');
     panel.appendChild(el('div', 'min-height:24px;margin-bottom:8px;font-size:14px', o.log));
+
+    if (this.showSwitch && o.switches.length) panel.appendChild(this.switchPanel(o));
+
     const grid = el('div', 'display:grid;grid-template-columns:repeat(4,1fr);gap:8px');
     o.moves.forEach((m) => {
       const color = TYPE_COLOR[m.type ?? ''] ?? '#6b7280';
@@ -68,13 +92,26 @@ export class Hud {
       grid.appendChild(b);
     });
     panel.appendChild(grid);
-    if (o.canCatch) {
-      const cb = el('button', 'pointer-events:auto;margin-top:8px;background:#ffd36b;border:0;border-radius:7px;padding:9px 16px;cursor:pointer', 'Throw Ultra Ball');
-      cb.addEventListener('click', () => this.handlers.onCatch());
-      panel.appendChild(cb);
+
+    // action row: Switch + ball throws
+    const actions = el('div', 'display:flex;gap:8px;margin-top:8px;flex-wrap:wrap');
+    if (o.switches.length) {
+      const sw = el('button', `pointer-events:auto;background:${this.showSwitch ? '#5a8ed8' : '#3a5a8c'};color:#fff;border:0;border-radius:7px;padding:9px 16px;cursor:pointer;font-weight:600`, this.showSwitch ? 'Cancel' : 'Switch ⮂');
+      sw.addEventListener('click', () => { this.showSwitch = !this.showSwitch; this.render(this.last!); });
+      actions.appendChild(sw);
     }
+    if (o.canCatch) {
+      o.balls.forEach((ball) => {
+        const cb = el('button', 'pointer-events:auto;background:#ffd36b;color:#222;border:0;border-radius:7px;padding:9px 16px;cursor:pointer;font-weight:600', `Throw ${ball.name} (${ball.count})`);
+        cb.addEventListener('click', () => this.handlers.onBall(ball.ballType));
+        actions.appendChild(cb);
+      });
+      if (!o.balls.length) actions.appendChild(el('div', 'align-self:center;font-size:12px;color:#b9c4d6', 'No Poké Balls'));
+    }
+    if (actions.childElementCount) panel.appendChild(actions);
+
     children.push(panel);
     this.root.replaceChildren(...children);
   }
-  clear() { this.root.replaceChildren(); }
+  clear() { this.root.replaceChildren(); this.showSwitch = false; }
 }

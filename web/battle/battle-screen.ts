@@ -14,7 +14,7 @@ export class BattleScreen {
   private foeSpecies = '';
   private running = false;
 
-  constructor(private host: HTMLElement, private onAction: (kind: 'turn' | 'catch', index?: number) => void) {
+  constructor(private host: HTMLElement, private onAction: (cmd: string, body?: Record<string, unknown>) => void) {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.domElement.style.cssText = 'position:absolute;inset:0';
     this.host.appendChild(this.renderer.domElement);
@@ -24,7 +24,11 @@ export class BattleScreen {
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0x557755, 1.2));
     const dir = new THREE.DirectionalLight(0xffffff, 0.6); dir.position.set(3, 6, 4); this.scene.add(dir);
     this.camera.position.set(0, 3.6, 6.4); this.camera.lookAt(0, 1.1, 0);
-    this.hud = new Hud(this.host, { onMove: (i) => this.onAction('turn', i), onCatch: () => this.onAction('catch') });
+    this.hud = new Hud(this.host, {
+      onMove: (i) => this.onAction('turn', { index: i }),
+      onSwitch: (i) => this.onAction('switchMon', { index: i }),
+      onBall: (ball) => this.onAction('catch', { ball }),
+    });
   }
 
   async render(view: View) {
@@ -42,7 +46,8 @@ export class BattleScreen {
       self: { name: `${view.self.species} L${view.self.level}`, hp: view.self.hpPercent, status: view.self.status, boosts: view.self.boosts ?? {}, volatiles: view.self.volatiles ?? [], item: view.self.heldItem || undefined },
       foe: { name: `${view.foe.species}`, hp: view.foe.hpPercent, status: view.foe.status, boosts: view.foe.boosts ?? {}, volatiles: view.foe.volatiles ?? [] },
       weather: view.weather ?? '', terrain: view.terrain ?? '',
-      moves: view.moves, canCatch: view.canCatch, log: view.log,
+      moves: view.moves, switches: view.switches ?? [], balls: view.balls ?? [],
+      canCatch: view.canCatch, log: view.log,
     });
     if (!this.running) { this.running = true; this.loop(); }
   }
