@@ -1,11 +1,11 @@
 import { api } from './net';
 import { OverworldScreen2D } from './overworld/overworld2d';
-import { BattleScreen } from './battle/battle-screen';
+import { BattleScreen2D } from './battle/battle2d';
 import { Menu } from './ui/menu';
 
 const root = document.getElementById('game')!;
 
-let battle: BattleScreen | null = null;
+let battle: BattleScreen2D | null = null;
 let busy = false;
 
 async function send(cmd: string, body: Record<string, unknown> = {}) {
@@ -33,7 +33,7 @@ function render(view: any) {
   } else {
     overworld.hide();
     menu.clear();
-    if (!battle) battle = new BattleScreen(root, (cmd, body) => send(cmd, body ?? {}));
+    if (!battle) battle = new BattleScreen2D(root, (cmd, body) => send(cmd, body ?? {}));
     void battle.render(view);
   }
 }
