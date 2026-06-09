@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { makeTree, makePineTree, makeGrassTuft, makeFlower, makeBush } from './props';
+import { makeTree, makePineTree, makeGrassTuft, makeFlower, makeBush, makeRock } from './props';
 import type { View } from '../net';
 
 // 3D overworld in the Let's Go spirit: a grassy field under a tilted 3/4 camera,
@@ -81,10 +82,14 @@ export class OverworldScreen3D {
     this.buildPlayer();
     this.scene.add(this.player);
 
-    // post-processing: subtle bloom for that soft, lit Let's-Go glow
+    // post-processing: ambient occlusion (depth/contact shading) + subtle bloom
     this.composer = new EffectComposer(this.renderer);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.3, 0.7, 0.9));
+    const gtao = new GTAOPass(this.scene, this.camera, window.innerWidth, window.innerHeight);
+    gtao.output = GTAOPass.OUTPUT.Default;
+    (gtao as any).blendIntensity = 0.7;
+    this.composer.addPass(gtao);
+    this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.25, 0.7, 0.9));
     this.composer.addPass(new OutputPass());
 
     window.addEventListener('keydown', (e) => {
@@ -169,6 +174,29 @@ export class OverworldScreen3D {
         if (obj) { obj.position.set(x, 0, y); this.tileGroup.add(obj); }
       }
     }
+    this.scatterDecor();
+  }
+
+  // Fill the open ground AROUND the play area with a natural tree-line + scattered
+  // rocks/flowers so the field reads as open and alive (not a walled box).
+  private scatterDecor() {
+    const W = this.mapW, H = this.mapH;
+    const rand = (n: number) => { const x = Math.sin(n * 131.7) * 1e4; return x - Math.floor(x); };
+    let i = 1000;
+    for (let gx = -8; gx <= W + 8; gx++) {
+      for (let gz = -8; gz <= H + 8; gz++) {
+        if (gx >= -1 && gx <= W && gz >= -1 && gz <= H) continue; // keep the play area clear
+        const r = rand(gx * 73.1 + gz * 19.7);
+        const x = gx + (rand(i * 3 + 1) - 0.5) * 0.6, z = gz + (rand(i * 3 + 2) - 0.5) * 0.6;
+        let obj: THREE.Object3D | null = null;
+        if (r < 0.5) obj = r < 0.1 ? makePineTree(i) : makeTree(i);   // dense tree-line
+        else if (r < 0.58) obj = makeRock(i);
+        else if (r < 0.64) obj = makeFlower(i);
+        else if (r < 0.72) obj = makeGrassTuft(i);
+        if (obj) { obj.position.set(x, 0, z); this.tileGroup.add(obj); }
+        i++;
+      }
+    }
   }
 
   // ---- frame --------------------------------------------------------------
@@ -201,8 +229,8 @@ export class OverworldScreen3D {
     this.player.rotation.y += (faceAngle - this.player.rotation.y) * 0.3;
 
     // follow camera (tilted 3/4, Let's Go-ish)
-    const target = new THREE.Vector3(this.pvis.x, 0.6, this.pvis.z);
-    const want = new THREE.Vector3(this.pvis.x, 7.5, this.pvis.z + 6.5);
+    const target = new THREE.Vector3(this.pvis.x, 0.7, this.pvis.z);
+    const want = new THREE.Vector3(this.pvis.x, 9.5, this.pvis.z + 8.8);
     this.cam.lerp(want, 0.12); if (this.cam.length() === 0) this.cam.copy(want);
     this.camera.position.copy(this.cam);
     this.camera.lookAt(target);
