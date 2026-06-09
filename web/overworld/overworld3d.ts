@@ -40,6 +40,14 @@ export class OverworldScreen3D {
   private cam = new THREE.Vector3();
   private bob = 0;
 
+  private sun!: THREE.DirectionalLight;
+  private hemi!: THREE.HemisphereLight;
+  private particles?: THREE.Points;
+  private swayables: THREE.Object3D[] = [];     // grass tufts that gently sway
+  private villagers: { obj: THREE.Object3D; x: number; z: number; tx: number; tz: number; spd: number }[] = [];
+  private timeKey = '';
+  private lastT = performance.now();
+
   private tileGroup = new THREE.Group();
   private builtLocation = '';
   private mapW = 9; private mapH = 6;
@@ -62,15 +70,17 @@ export class OverworldScreen3D {
     this.scene.background = new THREE.Color('#bfeaff');
     this.scene.fog = new THREE.Fog('#bfeaff', 22, 46);
 
-    // lighting — bright, soft, slightly warm (Let's Go daylight)
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x6a9a4a, 1.15));
-    const sun = new THREE.DirectionalLight(0xfff4e0, 1.1);
-    sun.position.set(8, 16, 6); sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
-    const d = 24; const sc = sun.shadow.camera as THREE.OrthographicCamera;
+    // lighting — bright, soft, slightly warm (Let's Go daylight); refs kept for day/night
+    this.hemi = new THREE.HemisphereLight(0xffffff, 0x6a9a4a, 1.15);
+    this.scene.add(this.hemi);
+    this.sun = new THREE.DirectionalLight(0xfff4e0, 1.1);
+    this.sun.position.set(8, 16, 6); this.sun.castShadow = true;
+    this.sun.shadow.mapSize.set(2048, 2048);
+    const d = 24; const sc = this.sun.shadow.camera as THREE.OrthographicCamera;
     sc.left = -d; sc.right = d; sc.top = d; sc.bottom = -d; sc.near = 1; sc.far = 60;
-    sun.shadow.bias = -0.0005;
-    this.scene.add(sun);
+    this.sun.shadow.bias = -0.0005;
+    this.scene.add(this.sun);
+    this.buildParticles();
 
     // big grass ground so the field reads as open (Let's Go style)
     const ground = new THREE.Mesh(
@@ -150,10 +160,61 @@ export class OverworldScreen3D {
     return g;
   }
 
+  // ---- W5: lived-in polish ------------------------------------------------
+
+  private dotTexture(): THREE.Texture {
+    const c = document.createElement('canvas'); c.width = c.height = 32; const g = c.getContext('2d')!;
+    const grd = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+    grd.addColorStop(0, '#fff'); grd.addColorStop(0.35, '#fff'); grd.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grd; g.fillRect(0, 0, 32, 32);
+    return new THREE.CanvasTexture(c);
+  }
+
+  // drifting ambient motes (pollen by day / fireflies at night), follow the player
+  private buildParticles() {
+    const N = 150;
+    const pos = new Float32Array(N * 3);
+    for (let i = 0; i < N; i++) { pos[i * 3] = (Math.random() - 0.5) * 36; pos[i * 3 + 1] = Math.random() * 5 + 0.4; pos[i * 3 + 2] = (Math.random() - 0.5) * 36; }
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    (geo as any).userData.base = pos.slice();
+    const m = new THREE.PointsMaterial({ size: 0.16, map: this.dotTexture(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, color: 0xfff2b0, opacity: 0.55 });
+    this.particles = new THREE.Points(geo, m);
+    this.scene.add(this.particles);
+  }
+
+  // tint sky / lights / fog / particles by time of day
+  private applyTimeOfDay(time: string) {
+    const P: Record<string, { sky: number; fog: number; sunC: number; sunI: number; hemiI: number; ground: number; partC: number; partO: number }> = {
+      morning: { sky: 0xd8ecff, fog: 0xdfeeff, sunC: 0xffe6c4, sunI: 1.05, hemiI: 1.1, ground: 0x6a9a4a, partC: 0xfff0c0, partO: 0.5 },
+      day:     { sky: 0xbfeaff, fog: 0xbfeaff, sunC: 0xfff4e0, sunI: 1.2, hemiI: 1.2, ground: 0x6a9a4a, partC: 0xffffff, partO: 0.35 },
+      night:   { sky: 0x24345e, fog: 0x2a3a60, sunC: 0x95a2d8, sunI: 0.55, hemiI: 0.8, ground: 0x2c3a55, partC: 0xfff3a0, partO: 0.95 },
+    };
+    const p = P[time] ?? P.day;
+    (this.scene.background as THREE.Color).set(p.sky);
+    (this.scene.fog as THREE.Fog).color.set(p.fog);
+    this.sun.color.set(p.sunC); this.sun.intensity = p.sunI;
+    this.hemi.color.set(p.sky); this.hemi.groundColor.set(p.ground); this.hemi.intensity = p.hemiI;
+    if (this.particles) { (this.particles.material as THREE.PointsMaterial).color.set(p.partC); (this.particles.material as THREE.PointsMaterial).opacity = p.partO; (this.particles.material as THREE.PointsMaterial).size = time === 'night' ? 0.22 : 0.16; }
+  }
+
+  // a couple of villagers wandering the open ground near the path
+  private spawnVillagers() {
+    const colors = [0x4a7fd6, 0xd66a9a, 0x6abf6a, 0xc8923a];
+    const cx = this.mapW / 2, cz = this.mapH / 2;
+    const n = 3;
+    for (let k = 0; k < n; k++) {
+      const obj = this.character(colors[k % colors.length]);
+      const x = cx + (Math.random() - 0.5) * (this.mapW - 6), z = cz + (Math.random() - 0.5) * (this.mapH - 6);
+      obj.position.set(x, 0, z); this.tileGroup.add(obj);
+      this.villagers.push({ obj, x, z, tx: x, tz: z, spd: 0.25 + Math.random() * 0.2 });
+    }
+  }
+
   // ---- tiles --------------------------------------------------------------
 
   private rebuildTiles(view: View) {
     this.tileGroup.clear();
+    this.swayables = []; this.villagers = [];
     const tiles: string[][] = view.tiles;
     this.mapH = tiles.length; this.mapW = tiles[0].length;
     for (let y = 0; y < this.mapH; y++) {
@@ -167,12 +228,12 @@ export class OverworldScreen3D {
           const g = new THREE.Group(); g.add(makeGrassTuft(seed));
           if (seed % 3 === 0) { const f = makeFlower(seed + 1); f.position.set(0.25, 0, 0.2); g.add(f); }
           if (seed % 7 === 0) { const b = makeBush(seed + 2); b.position.set(-0.25, 0, -0.2); g.add(b); }
-          obj = g;
+          obj = g; this.swayables.push(g);
         }
         else if (t === 'field') {
           // open grass ground: bare (ground plane shows), with the odd flower/tuft for life
           if (seed % 23 === 0) obj = makeFlower(seed);
-          else if (seed % 17 === 0) obj = makeGrassTuft(seed);
+          else if (seed % 17 === 0) { obj = makeGrassTuft(seed); this.swayables.push(obj); }
           else continue;
         }
         else if (t === 'center') obj = makePokemonCenter();
@@ -187,6 +248,7 @@ export class OverworldScreen3D {
       }
     }
     this.scatterDecor();
+    this.spawnVillagers();
   }
 
   // Fill the open ground AROUND the play area with a natural tree-line + scattered
@@ -225,6 +287,7 @@ export class OverworldScreen3D {
       this.rebuildTiles(view);
       this.pvis = { x: view.player.x, z: view.player.y };  // snap on location change
     }
+    if (view.time && view.time !== this.timeKey) { this.timeKey = view.time; this.applyTimeOfDay(view.time); }
     // top bar
     const party = (view.party ?? []).map((m: any) => `${m.species} L${m.level} ${m.hpPercent}%`).join('   ');
     this.topbar.textContent = `${view.locationId}  ·  ${view.time}  ·  badges:${view.badges?.length ?? 0}  ·  ${view.money ?? 0}₽  ·  ${party}`;
@@ -255,6 +318,33 @@ export class OverworldScreen3D {
     this.cam.lerp(want, 0.12); if (this.cam.length() === 0) this.cam.copy(want);
     this.camera.position.copy(this.cam);
     this.camera.lookAt(target);
+
+    const now = performance.now() / 1000;
+    const dt = Math.min(0.05, now - this.lastT / 1000); this.lastT = performance.now();
+
+    // grass sway — gentle wind, phase offset by position
+    for (const s of this.swayables) s.rotation.z = Math.sin(now * 1.6 + s.position.x * 0.7 + s.position.z * 0.5) * 0.12;
+
+    // wandering villagers
+    for (const v of this.villagers) {
+      const dx = v.tx - v.x, dz = v.tz - v.z; const d = Math.hypot(dx, dz);
+      if (d < 0.15) { v.tx = this.mapW / 2 + (Math.random() - 0.5) * (this.mapW - 6); v.tz = this.mapH / 2 + (Math.random() - 0.5) * (this.mapH - 6); }
+      else { v.x += (dx / d) * v.spd * dt; v.z += (dz / d) * v.spd * dt; v.obj.rotation.y = Math.atan2(dx, dz); }
+      v.obj.position.set(v.x, Math.abs(Math.sin(now * 6 + v.x)) * 0.04, v.z);
+    }
+
+    // ambient motes drift + follow the player loosely
+    if (this.particles) {
+      this.particles.position.set(this.pvis.x, 0, this.pvis.z);
+      const pos = this.particles.geometry.getAttribute('position') as THREE.BufferAttribute;
+      const base = (this.particles.geometry as any).userData.base as Float32Array;
+      for (let i = 0; i < pos.count; i++) {
+        pos.setX(i, base[i * 3] + Math.sin(now * 0.4 + i) * 0.6);
+        pos.setY(i, base[i * 3 + 1] + Math.sin(now * 0.7 + i * 1.3) * 0.4);
+        pos.setZ(i, base[i * 3 + 2] + Math.cos(now * 0.35 + i) * 0.6);
+      }
+      pos.needsUpdate = true;
+    }
 
     this.composer.render();
   };
