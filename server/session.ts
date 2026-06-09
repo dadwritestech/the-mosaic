@@ -1,7 +1,12 @@
 // Server-side game session. Runs in Node (Vite SSR), where pokemon-showdown works.
 // The browser is a thin client; it never imports this or src/.
-import type { GameState } from '../src/game/types';
-import { createNewGame, addToParty, grantBadge, swapPartyMembers, addMoney, addItem } from '../src/game/game-state';
+import type { GameState, OwnedPokemon } from '../src/game/types';
+import { createNewGame, addToParty, grantBadge, swapPartyMembers, addMoney, addItem, registerSeen, registerCaught, depositToBox, withdrawFromBox } from '../src/game/game-state';
+import { computeStats } from '../src/game/stats';
+import { expForLevel, growthRateOf } from '../src/game/growth-rates';
+import { maxPp } from '../src/game/pp';
+import { listReadyRematches, rematchLevelCap } from '../src/game/rematch';
+import { getTrainer } from '../src/content/region';
 import { createOwned, setHp } from '../src/game/owned-pokemon';
 import { advanceStep, timeOfDay } from '../src/game/clock';
 import { wildMoveset } from '../src/game/learnset';
@@ -33,6 +38,7 @@ interface BattleCtx {
   gymId?: string; log: string;
   activeIdx: number;              // which party slot is currently on the field (p1)
   participants: Set<string>;      // uids that were ever active — for exp distribution
+  wildMon?: OwnedPokemon;         // the catchable wild Pokémon (added to team if caught)
 }
 
 const BALL_ITEM: Record<string, string> = { poke: 'pokeball', great: 'greatball', ultra: 'ultraball', master: 'masterball' };
@@ -45,6 +51,8 @@ class GameSession {
   message = '';
   overlay: any = null;                 // open menu overlay (pause/party/bag/shop/center/message), or null
   private saves = new FileSaveStore('.saves');
+  private boxIndex = 0;                 // PC box currently being viewed
+  private trainerGym: Record<string, string> = {}; // trainerId -> gymId, for Vs-Seeker rematches
 
   constructor() {
     let g = addToParty(createNewGame({ difficultyMode: 'normal', nuzlocke: false }),
@@ -57,9 +65,11 @@ class GameSession {
     g = addItem(g, 'medicine', 'antidote', 2);
     g = addItem(g, 'balls', 'pokeball', 10);
     this.state = g;
+    for (const p of this.state.party) this.state = registerCaught(this.state, this.dexNum(p.species)); // starters in the dex
     const m = this.map(); this.px = m.spawn.x; this.py = m.spawn.y;
   }
   private map(): TileMap { return SLICE_MAPS[this.locationId]; }
+  private dexNum(species: string): number { return (Sim.Dex as any).forGen(9).species.get(species).num; }
 
   view() {
     if (this.battle) return this.battleView();
@@ -107,6 +117,9 @@ class GameSession {
       case 'bag':    this.overlay = this.bagOverlay(); break;
       case 'save':   this.overlay = { kind: 'save', slots: ['slot1', 'slot2', 'slot3'] }; break;
       case 'shop':   this.overlay = this.shopOverlay(); break;
+      case 'pokedex': this.overlay = this.pokedexOverlay(); break;
+      case 'box':    this.overlay = this.boxOverlay(); break;
+      case 'vsseeker': this.overlay = this.vsSeekerOverlay(); break;
       case 'close':  this.overlay = null; break;
       default:       this.overlay = null; break;
     }
@@ -157,6 +170,65 @@ class GameSession {
   }
 
   closeMenu() { this.overlay = null; return this.view(); }
+
+  // ---- Summary / Box / Pokédex / Vs-Seeker --------------------------------
+
+  private monSummary(mon: OwnedPokemon) {
+    const dex = (Sim.Dex as any).forGen(9);
+    const stats = computeStats(mon);
+    const group = growthRateOf(mon.species);
+    const cur = expForLevel(mon.level, group);
+    const next = mon.level >= 100 ? cur : expForLevel(mon.level + 1, group);
+    const span = Math.max(1, next - cur);
+    const into = mon.exp - cur;
+    let heldItem = '';
+    if (mon.heldItem) { try { heldItem = getItem(mon.heldItem).name; } catch { heldItem = mon.heldItem; } }
+    return {
+      species: mon.species, level: mon.level, gender: mon.gender ?? 'N',
+      types: dex.species.get(mon.species).types as string[],
+      ability: mon.ability, nature: mon.nature, heldItem,
+      hp: mon.currentHp, maxHp: stats.hp, hpPercent: Math.round((mon.currentHp / stats.hp) * 100), status: mon.status ?? '',
+      stats,
+      exp: mon.exp, expIntoLevel: into, expSpan: span, expToNext: Math.max(0, next - mon.exp), expPercent: Math.min(100, Math.round((into / span) * 100)),
+      moves: mon.moves.map((mv) => { const md = dex.moves.get(mv.id); return { name: md.name, type: md.type, pp: mv.pp, maxpp: maxPp(mv) }; }),
+    };
+  }
+  summary(uid: string) {
+    const mon = this.state.party.find((p) => p.uid === uid) ?? this.state.boxes.flatMap((b) => b.slots).find((m) => m?.uid === uid) ?? undefined;
+    if (!mon) return this.view();
+    this.overlay = { kind: 'summary', mon: this.monSummary(mon) };
+    return this.view();
+  }
+
+  private boxOverlay() {
+    this.boxIndex = Math.max(0, Math.min(this.boxIndex, this.state.boxes.length - 1));
+    const box = this.state.boxes[this.boxIndex];
+    return {
+      kind: 'box', boxIndex: this.boxIndex, boxName: `Box ${this.boxIndex + 1}`, boxCount: this.state.boxes.length,
+      party: this.monList().map((m) => ({ uid: m.uid, species: m.species, level: m.level, hpPercent: m.hpPercent, status: m.status })),
+      slots: box.slots.map((m) => (m ? { uid: m.uid, species: m.species, level: m.level } : null)),
+    };
+  }
+  boxNav(delta: number) { this.boxIndex += delta; this.overlay = this.boxOverlay(); return this.view(); }
+  deposit(uid: string) { this.state = depositToBox(this.state, uid); this.overlay = this.boxOverlay(); return this.view(); }
+  withdraw(uid: string) { this.state = withdrawFromBox(this.state, uid); this.overlay = this.boxOverlay(); return this.view(); }
+
+  private pokedexOverlay() {
+    const dex = (Sim.Dex as any).forGen(9);
+    const nums = new Set<number>([...this.state.pokedex.seen, ...this.state.pokedex.caught]);
+    const nameByNum = new Map<number, string>();
+    for (const sp of dex.species.all()) { if (nums.has(sp.num) && !nameByNum.has(sp.num)) nameByNum.set(sp.num, sp.name); }
+    const entries = [...nums].sort((a, b) => a - b).map((num) => ({ num, name: nameByNum.get(num) ?? `#${num}`, caught: this.state.pokedex.caught.has(num) }));
+    return { kind: 'pokedex', seen: this.state.pokedex.seen.size, caught: this.state.pokedex.caught.size, entries };
+  }
+
+  private vsSeekerOverlay() {
+    const ready = listReadyRematches(this.state)
+      .map((id) => { let name = id; try { name = getTrainer(id).name; } catch { /* keep id */ } return { trainerId: id, name, gymId: this.trainerGym[id] ?? '' }; })
+      .filter((r) => r.gymId);
+    return { kind: 'vsseeker', levelCap: rematchLevelCap(this.state), ready };
+  }
+  async rechallenge(gymId: string) { if (!gymId || this.battle) return this.view(); this.overlay = null; return this.startGym(gymId); }
 
   swapParty(a: number, b: number) {
     this.state = swapPartyMembers(this.state, a, b);
@@ -222,14 +294,16 @@ class GameSession {
 
   private async startWild(species: string, level: number) {
     const wild = createOwned({ species, level, moves: wildMoveset(species, level) });
+    this.state = registerSeen(this.state, this.dexNum(species));
     const bridge = new BattleBridge();
     await bridge.startBattle(this.playerTeam(), [ownedToSet(wild)], { formatid: 'gen9customgame', isWild: true, initialConditions: { p1: this.carryConditions() } });
-    this.battle = { bridge, isWild: true, oppTeam: [ownedToSet(wild)], defeated: [{ species, level }], log: `A wild ${species} appeared!`, activeIdx: 0, participants: new Set([this.state.party[0].uid]) };
+    this.battle = { bridge, isWild: true, oppTeam: [ownedToSet(wild)], defeated: [{ species, level }], log: `A wild ${species} appeared!`, activeIdx: 0, participants: new Set([this.state.party[0].uid]), wildMon: wild };
     return this.battleView();
   }
   private async startGym(gymId: string) {
     const gym = getGym(gymId);
     const team = composeTeam(gym.trainer, { gen: 9, counterDraftStrength: 0.3, rng: makeRng(7) });
+    for (const s of team) this.state = registerSeen(this.state, this.dexNum(s.species));
     const bridge = new BattleBridge();
     await bridge.startBattle(this.playerTeam(), team, { formatid: 'gen9customgame', initialConditions: { p1: this.carryConditions() } });
     this.battle = { bridge, isWild: false, oppTeam: team, defeated: team.map((s) => ({ species: s.species, level: s.level })), gymId, log: `${gym.trainer.name} wants to battle!`, activeIdx: 0, participants: new Set([this.state.party[0].uid]) };
@@ -344,8 +418,13 @@ class GameSession {
     return this.battleView();
   }
 
+  // Write each party member's end-of-battle HP/status back onto the saved party.
+  private writeBackParty(fc: { hpPercent: number; status: string }[]) {
+    this.state = { ...this.state, party: this.state.party.map((p, i) => fc[i] ? { ...setHp(p, Math.round((fc[i].hpPercent / 100) * maxHp(p))), status: fc[i].status } : p) };
+  }
+
   private finish(catchResult?: 'caught') {
-    const b = this.battle!; const won = catchResult === 'caught' || b.bridge.state.winner === 'p1';
+    const b = this.battle!;
     const fc = b.bridge.finalConditions().p1; // aligned to party order
     const finalConditions = this.state.party.map((p, i) => ({
       uid: p.uid,
@@ -353,7 +432,15 @@ class GameSession {
       status: fc[i]?.status ?? (p.status ?? ''),
     }));
     let msg = '';
-    if (won) {
+    if (catchResult === 'caught') {
+      this.writeBackParty(finalConditions);                       // your mon kept its battle damage
+      if (b.wildMon) {                                            // actually add the caught Pokémon
+        this.state = registerCaught(this.state, this.dexNum(b.wildMon.species));
+        this.state = addToParty(this.state, b.wildMon);
+      }
+      const full = this.state.party.length >= 6;
+      msg = `${b.wildMon?.species ?? 'The Pokémon'} was added to your ${full ? 'PC box' : 'team'}!`;
+    } else if (b.bridge.state.winner === 'p1') {
       const out = applyBattleResult(this.state, {
         won: true, finalConditions,
         defeatedTeam: b.defeated, participantUids: Array.from(b.participants), isWild: b.isWild,
@@ -361,12 +448,10 @@ class GameSession {
         rng: makeRng(1),
       });
       this.state = out.state;
-      if (b.gymId) { const gym = getGym(b.gymId); this.state = recordTrainerDefeat(grantBadge(this.state, gym.badgeId), gym.trainer.id); msg = `You earned the ${gym.badgeId} badge!`; }
-      else if (catchResult === 'caught') msg = 'Added to your party path.';
+      if (b.gymId) { const gym = getGym(b.gymId); this.trainerGym[gym.trainer.id] = b.gymId; this.state = recordTrainerDefeat(grantBadge(this.state, gym.badgeId), gym.trainer.id); msg = `You earned the ${gym.badgeId} badge!`; }
       else msg = `You won! +${out.summary.money}₽`;
     } else {
-      // Persist the beating: write back HP/status even on a loss so it matters.
-      this.state = { ...this.state, party: this.state.party.map((p, i) => fc[i] ? { ...setHp(p, Math.round((fc[i].hpPercent / 100) * maxHp(p))), status: fc[i].status } : p) };
+      this.writeBackParty(finalConditions); // persist the beating even on a loss
       msg = 'You were defeated… your team needs healing.';
     }
     this.battle = null; this.message = msg;
@@ -383,6 +468,11 @@ export async function dispatch(cmd: string, body: any) {
     case 'turn': return singleton.turn(body.index);
     case 'switchMon': return singleton.switchMon(body.index);
     case 'catch': return singleton.catch(body.ball ?? 'poke');
+    case 'summary': return singleton.summary(body.uid);
+    case 'boxNav': return singleton.boxNav(body.delta);
+    case 'deposit': return singleton.deposit(body.uid);
+    case 'withdraw': return singleton.withdraw(body.uid);
+    case 'rechallenge': return singleton.rechallenge(body.gymId);
     case 'menu': return singleton.menu(body.which);
     case 'closeMenu': return singleton.closeMenu();
     case 'swapParty': return singleton.swapParty(body.a, body.b);

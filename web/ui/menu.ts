@@ -1,6 +1,7 @@
 // DOM overlay for the core-loop menus (pause / party / bag / shop / Center / save).
 // Server-driven: the server sends `view.overlay`; this renders it and routes
 // button presses back as commands. No game logic lives here.
+import { renderSummary, renderBox, renderPokedex, renderVsSeeker } from './menu-screens';
 
 type Send = (cmd: string, body?: Record<string, unknown>) => void;
 
@@ -20,6 +21,7 @@ const BTN_ALT = BTN.replace('#3a5a8c', '#4a4a55');
 export class Menu {
   root: HTMLDivElement;
   private selected: number | null = null; // party-swap first selection
+  private reorder = false;                 // party reorder mode (vs. open-summary)
 
   constructor(parent: HTMLElement, private send: Send) {
     this.root = document.createElement('div');
@@ -77,6 +79,9 @@ export class Menu {
         const body = el('div', 'display:flex;flex-direction:column;gap:8px;min-width:200px');
         body.appendChild(this.button('Party', () => this.send('menu', { which: 'party' })));
         body.appendChild(this.button('Bag', () => this.send('menu', { which: 'bag' })));
+        body.appendChild(this.button('Pokédex', () => this.send('menu', { which: 'pokedex' })));
+        body.appendChild(this.button('PC Box', () => this.send('menu', { which: 'box' })));
+        body.appendChild(this.button('Vs-Seeker', () => this.send('menu', { which: 'vsseeker' })));
         body.appendChild(this.button('Save', () => this.send('menu', { which: 'save' })));
         node = this.panel('Menu', body, [this.button('Close', () => this.send('closeMenu'), BTN_ALT)]);
         break;
@@ -90,17 +95,25 @@ export class Menu {
         const useMode = o.purpose === 'useItem';
         const body = el('div', '');
         body.appendChild(el('div', 'font-size:13px;color:#9fb3d1;margin-bottom:10px',
-          useMode ? 'Choose a Pokémon to use the item on.' : 'Tap two Pokémon to swap their order.'));
+          useMode ? 'Choose a Pokémon to use the item on.'
+            : this.reorder ? 'Reorder: tap two Pokémon to swap them.' : 'Tap a Pokémon to see its summary.'));
         o.mons.forEach((m: any, i: number) => {
           body.appendChild(this.monCard(m, () => {
             if (useMode) { this.send('useItem', { itemId: o.itemId, targetUid: m.uid }); return; }
+            if (!this.reorder) { this.send('summary', { uid: m.uid }); return; }
             if (this.selected === null) { this.selected = i; this.render(view); }
             else { const a = this.selected; this.selected = null; this.send('swapParty', { a, b: i }); }
-          }, !useMode && this.selected === i));
+          }, !useMode && this.reorder && this.selected === i));
         });
-        node = this.panel(useMode ? 'Use Item — choose target' : 'Party', body, [this.button('Back', () => this.send('menu', { which: 'pause' }), BTN_ALT)]);
+        const footer = [this.button('Back', () => this.send('menu', { which: 'pause' }), BTN_ALT)];
+        if (!useMode) footer.unshift(this.button(this.reorder ? 'Done' : 'Reorder', () => { this.reorder = !this.reorder; this.selected = null; this.render(view); }));
+        node = this.panel(useMode ? 'Use Item — choose target' : 'Party', body, footer);
         break;
       }
+      case 'summary': node = this.panel(`${o.mon.species} — Summary`, renderSummary(o, this.send), [this.button('Back', () => this.send('menu', { which: 'party' }), BTN_ALT)]); break;
+      case 'box': node = this.panel('PC Box', renderBox(o, this.send), [this.button('Back', () => this.send('menu', { which: 'pause' }), BTN_ALT)]); break;
+      case 'pokedex': node = this.panel('Pokédex', renderPokedex(o, this.send), [this.button('Back', () => this.send('menu', { which: 'pause' }), BTN_ALT)]); break;
+      case 'vsseeker': node = this.panel('Vs-Seeker', renderVsSeeker(o, this.send), [this.button('Back', () => this.send('menu', { which: 'pause' }), BTN_ALT)]); break;
       case 'bag': {
         const body = el('div', 'min-width:300px');
         if (!o.pockets.length) body.appendChild(el('div', 'color:#9fb3d1', 'Your bag is empty.'));
