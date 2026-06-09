@@ -3,6 +3,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { makeTree, makePineTree, makeGrassTuft, makeFlower, makeBush } from './props';
 import type { View } from '../net';
 
 // 3D overworld in the Let's Go spirit: a grassy field under a tilted 3/4 camera,
@@ -127,18 +128,6 @@ export class OverworldScreen3D {
     return g;
   }
 
-  private tree(): THREE.Group {
-    const g = new THREE.Group();
-    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 0.5, 8), new THREE.MeshStandardMaterial({ color: 0x7a5230 }));
-    trunk.position.y = 0.25; trunk.castShadow = true; g.add(trunk);
-    const foliage = new THREE.MeshStandardMaterial({ color: 0x3a9444, roughness: 1 });
-    for (const [dx, dy, dz, r] of [[0, 0.85, 0, 0.42], [0.22, 0.7, 0.1, 0.3], [-0.2, 0.72, -0.12, 0.3], [0.05, 1.05, 0.05, 0.3]] as const) {
-      const s = new THREE.Mesh(new THREE.SphereGeometry(r, 12, 10), foliage);
-      s.position.set(dx, dy, dz); s.castShadow = true; g.add(s);
-    }
-    return g;
-  }
-
   private building(roof: number): THREE.Group {
     const g = new THREE.Group();
     const wall = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.6, 0.82), new THREE.MeshStandardMaterial({ color: 0xe9e3d6 }));
@@ -147,17 +136,6 @@ export class OverworldScreen3D {
     roofMesh.position.y = 0.8; roofMesh.rotation.y = Math.PI / 4; roofMesh.castShadow = true; g.add(roofMesh);
     const door = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.3, 0.04), new THREE.MeshStandardMaterial({ color: 0x5a4633 }));
     door.position.set(0, 0.15, 0.42); g.add(door);
-    return g;
-  }
-
-  private grassTuft(): THREE.Group {
-    const g = new THREE.Group();
-    const mat = new THREE.MeshStandardMaterial({ color: 0x3f8f34, side: THREE.DoubleSide });
-    for (let i = 0; i < 5; i++) {
-      const blade = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.4, 4), mat);
-      blade.position.set((Math.random() - .5) * 0.7, 0.2, (Math.random() - .5) * 0.7);
-      blade.rotation.z = (Math.random() - .5) * 0.4; blade.castShadow = true; g.add(blade);
-    }
     return g;
   }
 
@@ -170,9 +148,16 @@ export class OverworldScreen3D {
     for (let y = 0; y < this.mapH; y++) {
       for (let x = 0; x < this.mapW; x++) {
         const t = tiles[y][x];
+        const seed = x * 37 + y * 101;
         let obj: THREE.Object3D | null = null;
-        if (t === 'wall') obj = this.tree();
-        else if (t === 'grass') obj = this.grassTuft();
+        if (t === 'wall') obj = (seed % 5 === 0) ? makePineTree(seed) : makeTree(seed);
+        else if (t === 'grass') {
+          // tall-grass tile: a grass tuft, sometimes a flower or bush for life
+          const g = new THREE.Group(); g.add(makeGrassTuft(seed));
+          if (seed % 3 === 0) { const f = makeFlower(seed + 1); f.position.set(0.25, 0, 0.2); g.add(f); }
+          if (seed % 7 === 0) { const b = makeBush(seed + 2); b.position.set(-0.25, 0, -0.2); g.add(b); }
+          obj = g;
+        }
         else if (t === 'center') obj = this.building(0xe0533a);
         else if (t === 'shop') obj = this.building(0x3a7bd6);
         else if (t === 'gym') obj = this.building(0x9a55c8);
