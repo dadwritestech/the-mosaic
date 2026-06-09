@@ -11,3 +11,5 @@ _vite.log
 t*-*.png
 .saves/
 web/public/models3d/
+sprites-master/
+*.zip

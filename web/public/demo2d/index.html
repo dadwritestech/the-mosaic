@@ -1,0 +1,55 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>2D look demo — walkable</title>
+  <style>html,body{margin:0;background:#000;overflow:hidden;font-family:system-ui}
+    canvas{image-rendering:pixelated;display:block;margin:0 auto;background:#000}
+    #hint{position:fixed;top:8px;left:50%;transform:translateX(-50%);color:#fff;background:#0008;padding:6px 12px;border-radius:8px;font-size:14px}</style>
+</head>
+<body>
+  <div id="hint">Arrow keys to walk · this is the classic-2D look</div>
+  <canvas id="c"></canvas>
+  <script>
+    const c = document.getElementById('c'); const x = c.getContext('2d');
+    function fit(){ c.width = window.innerWidth; c.height = window.innerHeight; x.imageSmoothingEnabled = false; }
+    fit(); window.addEventListener('resize', fit);
+
+    const map = new Image(), fg = new Image();
+    const dirs = {}; let loaded = 0; const need = 6;
+    const ready = () => { if (++loaded === need) requestAnimationFrame(loop); };
+    map.onload = fg.onload = ready; map.src = 'town.png'; fg.src = 'foreground.png';
+    for (const d of ['Down','Up','Left','Right']) { const i = new Image(); i.onload = ready; i.src = 'player'+d+'.png'; dirs[d] = i; }
+
+    const ZOOM = 2.6, SPEED = 2.4;
+    // camera = map-space coords shown at canvas center; start mid-map
+    let camX = 0, camY = 0, started = false;
+    let facing = 'Down', frame = 0, frameTick = 0, moving = false;
+    const keys = {};
+    addEventListener('keydown', e => { if (e.key.startsWith('Arrow')) { keys[e.key] = true; e.preventDefault(); } });
+    addEventListener('keyup', e => { keys[e.key] = false; });
+
+    function loop() {
+      requestAnimationFrame(loop);
+      if (!started) { camX = map.width * 0.5; camY = map.height * 0.45; started = true; }
+      let dx = 0, dy = 0;
+      if (keys['ArrowLeft']) { dx = -1; facing = 'Left'; }
+      else if (keys['ArrowRight']) { dx = 1; facing = 'Right'; }
+      else if (keys['ArrowUp']) { dy = -1; facing = 'Up'; }
+      else if (keys['ArrowDown']) { dy = 1; facing = 'Down'; }
+      moving = dx !== 0 || dy !== 0;
+      camX += dx * SPEED / ZOOM; camY += dy * SPEED / ZOOM;
+      camX = Math.max(0, Math.min(map.width, camX)); camY = Math.max(0, Math.min(map.height, camY));
+      if (moving) { if (++frameTick % 8 === 0) frame = (frame + 1) % 4; } else { frame = 0; }
+
+      const ox = Math.round(c.width / 2 - camX * ZOOM), oy = Math.round(c.height / 2 - camY * ZOOM);
+      x.fillStyle = '#000'; x.fillRect(0, 0, c.width, c.height);
+      x.drawImage(map, ox, oy, map.width * ZOOM, map.height * ZOOM);
+      // player (4-frame walk sheet), centered
+      const spr = dirs[facing], fw = spr.width / 4, fh = spr.height;
+      x.drawImage(spr, frame * fw, 0, fw, fh, c.width / 2 - fw * ZOOM / 2, c.height / 2 - fh * ZOOM / 2, fw * ZOOM, fh * ZOOM);
+      x.drawImage(fg, ox, oy, fg.width * ZOOM, fg.height * ZOOM);
+    }
+  </script>
+</body>
+</html>

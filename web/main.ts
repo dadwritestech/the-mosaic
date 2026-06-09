@@ -1,5 +1,5 @@
 import { api } from './net';
-import { OverworldScreen3D } from './overworld/overworld3d';
+import { OverworldScreen2D } from './overworld/overworld2d';
 import { BattleScreen } from './battle/battle-screen';
 import { Menu } from './ui/menu';
 
@@ -14,7 +14,7 @@ async function send(cmd: string, body: Record<string, unknown> = {}) {
   try { render(await api(cmd, body)); } finally { busy = false; }
 }
 
-const overworld = new OverworldScreen3D(root, (dir) => send('move', { dir }));
+const overworld = new OverworldScreen2D(root, (dir) => send('move', { dir }));
 const menu = new Menu(root, (cmd, body) => send(cmd, body));
 
 // M opens the pause menu, Escape closes it (overworld only).
