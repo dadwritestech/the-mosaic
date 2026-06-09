@@ -10,3 +10,4 @@ _vite.log
 .playwright-mcp/
 t*-*.png
 .saves/
+web/public/models3d/

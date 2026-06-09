@@ -13,6 +13,7 @@ export function homeUrl(dexNum: number): string {
 }
 
 // Real Draco-compressed GLB 3D model (often animated), keyed by national dex number.
+// Served locally from web/public/models3d (no external host at runtime).
 export function modelUrl(dexNum: number): string {
-  return `/models3d/${dexNum}.glb`;
+  return `/models3d/regular/${dexNum}.glb`;
 }

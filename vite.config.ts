@@ -14,12 +14,8 @@ export default defineConfig({
         changeOrigin: true, secure: true,
         rewrite: (p) => p.replace(/^\/home/, '/PokeAPI/sprites/master/sprites/pokemon/other/home'),
       },
-      // Real Draco-compressed GLB 3D models (Pokemon-3D-api/assets), keyed by dex num.
-      '/models3d': {
-        target: 'https://raw.githubusercontent.com',
-        changeOrigin: true, secure: true,
-        rewrite: (p) => p.replace(/^\/models3d/, '/Pokemon-3D-api/assets/main/models/opt/regular'),
-      },
+      // (3D GLB models are now served locally from web/public/models3d — see
+      //  scripts/fetch-models.mjs. No external host at runtime.)
     },
   },
   build: { outDir: '../dist-web', emptyOutDir: true },

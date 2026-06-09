@@ -317,7 +317,7 @@ class GameSession {
 
   private battleView() {
     const b = this.battle!; const s = b.bridge.state; const c = b.bridge.getChoices('p1');
-    const sideView = (m: any) => ({ species: m.species, hpPercent: m.hpPercent, status: m.status, boosts: m.boosts ?? {}, volatiles: m.volatiles ?? [] });
+    const sideView = (m: any) => ({ species: m.species, num: this.dexNum(m.species), hpPercent: m.hpPercent, status: m.status, boosts: m.boosts ?? {}, volatiles: m.volatiles ?? [] });
     // Bench Pokémon you can switch to (every party slot except the active one).
     const switches = this.state.party
       .map((p, i) => ({ index: i + 1, species: p.species, level: p.level, hpPercent: Math.round((p.currentHp / maxHp(p)) * 100), status: p.status ?? '', fainted: p.currentHp <= 0 }))
