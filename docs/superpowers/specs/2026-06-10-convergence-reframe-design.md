@@ -12,7 +12,7 @@ The world is fusing through the **World Core** — the old regions bleed into on
 
 There are **no gyms, badges, or Elite Four.** The spine is a chain of **7 rifts**, each a seam where two worlds bleed together (this *is* the map aesthetic — biome fault-lines). Each rift is held by a **Warden**; beating the Warden unlocks a choice:
 
-- **Seal** (Purist) → the seam closes, the zone reverts to a single original region, its fused "convergence" Pokémon vanish for pure-region species, the area calms. Meter → Reset.
+- **Seal** (Purist) → the seam closes, the zone reverts to a single original region (chosen by the player's team — see *Seal direction* below), its fused "convergence" Pokémon vanish for pure-region species, the area calms. Meter → Reset.
 - **Attune** (Synthesist) → the seam stays open, the zone keeps its fused Pokémon and grows wilder/more dangerous. Meter → Embrace.
 
 Choices are **mixable** — the *pattern* of seals vs attunes (cumulative meter) decides the finale at the World Core: **Reset**, **Embrace**, or — if balanced — the **third path**. A single climactic **Warden of the Core** replaces the Elite Four gauntlet.
@@ -51,18 +51,31 @@ Wardens are the existing leader names recast as seam-keepers (no longer "the X-t
 Each rift zone is one of three states, tracked in GameState (system built in sub-project 2; this doc defines the *data* each state needs):
 
 - **`unsealed`** (default): live seam. Map shows the biome fault-line; encounters use the rift's **fused table** (convergence Pokémon — cross-region species mixes, the catch hook); ambient hazard/danger flavor.
-- **`sealed`**: the seam closes. Map reverts toward the rift's **`sealedBiome`** (one of its pair — by default biome A, the older/upstream world). Encounters use the **pure table** (single-region species). Calmer.
+- **`sealed`**: the seam closes. Map reverts toward **one of the rift's two biomes, chosen at seal-time by the player's team** (see *Seal direction*). Encounters use the **pure table for the chosen region** (single-region species). Calmer. The chosen biome is recorded on the rift's saved state.
 - **`attuned`**: seam stays open and intensifies. Map keeps the fault-line (more extreme). Encounters use the fused table at a **raised level/rarity** (stronger, rarer convergence mons). More dangerous, better rewards.
+
+## Seal direction (team-driven)
+
+Sealing does not restore a fixed past — it restores the version of the world the player's **team** belongs to. Each region/biome has a **generation**; the party's *generational lean* picks which of the seam's two regions survives.
+
+- **Biome → generation** (`BIOME_GEN`, bundled data, sub-project 1):
+  `kanto-plains`=1, `johto-forests`=2, `hoenn-beaches`=3, `sinnoh-tundra`=4, `unova-urban`=5, `kalos-gardens`=6, `alola-islands`=7, `galar-countryside`=8, `paldea-wilds`=9.
+- **Species → generation** (`speciesGeneration(num)`, bundled data, sub-project 1) — from national-dex ranges: 1:1–151, 2:152–251, 3:252–386, 4:387–493, 5:494–649, 6:650–721, 7:722–809, 8:810–905, 9:906–1025.
+- **The rule** (computed at seal-time; logic lives in sub-project 2): let `newLean` = count of party mons with `speciesGeneration ≥ 5`, `oldLean` = count with `≤ 4` (pivot at the global gen midpoint, exactly the player's "Gen 5+ vs Gen 4-and-below" intuition). If `newLean ≥ oldLean` the team is **new-leaning** → the seam collapses to the **higher-generation** of `{biomeA, biomeB}` (its `pureEncounters` for that side); otherwise **old-leaning** → the **lower-generation** side. The chosen biome is saved on the rift's state.
+
+Sub-project 1 ships `BIOME_GEN` and `speciesGeneration` (pure data + a small lookup, mirroring `src/game/exp-yield.ts`); sub-project 2 consumes them in the seal action.
 
 ## Data model changes
 
 In `src/content/types.ts` (additive + one replacement):
 - **Add `RiftDef`** (replaces `GymDef` for the spine):
-  - `id`, `name`, `biomeA: Biome`, `biomeB: Biome`, `sealedBiome: Biome` (defaults to `biomeA`)
+  - `id`, `name`, `biomeA: Biome`, `biomeB: Biome` (the two bleeding worlds; sealing collapses to whichever the team picks)
   - `levelBand: { min: number; max: number }`
   - `warden: WardenDef`
-  - `fusedEncounters: EncounterTable` (unsealed & attuned)
-  - `pureEncounters: EncounterTable` (sealed)
+  - `fusedEncounters: EncounterTable` (the seam mix — used while `unsealed`, and at raised level/rarity while `attuned`)
+  - `pureEncountersA: EncounterTable` (used if sealed collapses to `biomeA`)
+  - `pureEncountersB: EncounterTable` (used if sealed collapses to `biomeB`)
+  - (Per-side pure tables — not a shared biome table — because level bands escalate per rift, so "pure forest" differs at rift 1 vs rift 2.)
 - **Add `WardenDef`** (extends the current `TrainerDef` shape): existing fields (`id`, `name`, `baseTier`, `personality`, `teamSize`, `levelCap`, `basePayout`, `dropTable`) **plus** `signatureTactic: string` (a tag the AI/team-builder reads, e.g. `'rain-stall'`, `'trick-room'`, `'dragon-chaos'`).
 - **Keep `Biome`, `EncounterTable`, `EncounterEntry`, `NpcDef`, `TrainerDef`** as-is. `TrainerDef` still used for ordinary overworld trainers (sub-project 3).
 - **Remove/retire `GymDef`** usages once `region/index.ts` is rewritten (leave the type defined but unused until cleanup, to avoid breaking imports mid-migration).
@@ -87,7 +100,7 @@ The thresholds `T` and the per-choice deltas are tuned in sub-project 2; this do
 - The faction/meter concept and the `Biome` taxonomy.
 
 ## Testing (sub-project 1)
-- Content is data; tests assert structure: 7 rifts present, each with a valid biome pair, a `sealedBiome` within its pair, both encounter tables non-empty, level bands monotonically increasing, every Warden has a `signatureTactic`. Mirror the existing `slice-species`/`data-anchors` test style in `src/content`.
+- Content is data; tests assert structure: 7 rifts present; each has `biomeA ≠ biomeB` with differing `BIOME_GEN`; `fusedEncounters`, `pureEncountersA`, `pureEncountersB` all non-empty; level bands monotonically increasing across rifts; every Warden has a `signatureTactic`. `BIOME_GEN` covers all 9 biomes. `speciesGeneration` returns the right gen at range boundaries (e.g. 151→1, 152→2, 906→9). Mirror the existing `slice-species`/`data-anchors` test style in `src/content`/`src/game`.
 - The 190+ engine tests must stay green; gym-specific tests are updated/replaced as the gym data is removed.
 
 ## Out of scope (here)
