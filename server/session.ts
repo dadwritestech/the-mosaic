@@ -60,7 +60,7 @@ const BALL_ITEM: Record<string, string> = { poke: 'pokeball', great: 'greatball'
 class GameSession {
   state: GameState;
   locationId = 'aethels-rest';
-  px: number; py: number;
+  px = 0; py = 0;
   battle: BattleCtx | null = null;
   message = '';
   overlay: any = null;                 // open menu overlay (pause/party/bag/shop/center/message), or null
@@ -81,8 +81,7 @@ class GameSession {
     g = addItem(g, 'balls', 'pokeball', 10);
     this.state = g;
     for (const p of this.state.party) this.state = registerCaught(this.state, this.dexNum(p.species)); // starters in the dex
-    const m = this.map(); this.px = m.spawn.x; this.py = m.spawn.y;
-    this.visitedLocations.add(this.locationId);
+    this.enterLocation(this.locationId); // spawn at the start location (imported map or legacy)
   }
   private map(): TileMap { return SLICE_MAPS[this.locationId]; }
   /** The current location's imported map, or null if it's a legacy TileMap location. */
