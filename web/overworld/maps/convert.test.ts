@@ -30,3 +30,29 @@ describe('convertMap', () => {
     expect(m.triggers).toEqual([]);
   });
 });
+
+function eventWithTransfer(x: number, y: number, toMapId: number, tx: number, ty: number) {
+  const cmd = { __class: 'RPG::EventCommand', ivars: { '@code': 201, '@parameters': [0, toMapId, tx, ty, 0, 0] } };
+  const page = { __class: 'RPG::Event::Page', ivars: { '@list': [cmd] } };
+  return { x, y, name: 'door', pages: [page] };
+}
+function eventNpc(x: number, y: number, name: string) {
+  const page = { __class: 'RPG::Event::Page', ivars: { '@list': [] } };
+  return { x, y, name, pages: [page] };
+}
+
+describe('convertMap events', () => {
+  it('turns TransferPlayer events into warps via mapId->location', () => {
+    const m = convertMap({ ...fakeMap(), events: [eventWithTransfer(1, 0, 17, 5, 6)] }, fakeTileset(),
+      { id: 'test', spawn: { x: 0, y: 0 }, mapIdToLocation: { 17: 'cerulean-deep-mart' } });
+    expect(m.warps).toEqual([{ x: 1, y: 0, toMap: 'cerulean-deep-mart', toX: 5, toY: 6 }]);
+  });
+  it('classifies named events into triggers', () => {
+    const m = convertMap({ ...fakeMap(), events: [eventNpc(0, 0, 'Poke Mart Clerk'), eventNpc(1, 0, 'Old Man')] },
+      fakeTileset(), { id: 'test', spawn: { x: 0, y: 0 } });
+    expect(m.triggers).toEqual([
+      { x: 0, y: 0, kind: 'shop' },
+      { x: 1, y: 0, kind: 'npc', ref: 'Old Man' },
+    ]);
+  });
+});
