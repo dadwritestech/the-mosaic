@@ -39,6 +39,7 @@ interface BattleCtx {
   activeIdx: number;              // which party slot is currently on the field (p1)
   participants: Set<string>;      // uids that were ever active — for exp distribution
   wildMon?: OwnedPokemon;         // the catchable wild Pokémon (added to team if caught)
+  ended?: { result: 'win' | 'loss' | 'caught' | 'run'; message: string; lines: string[] }; // result is staged; the screen waits for "Continue"
 }
 
 const BALL_ITEM: Record<string, string> = { poke: 'pokeball', great: 'greatball', ultra: 'ultraball', master: 'masterball' };
@@ -376,6 +377,7 @@ class GameSession {
       bag: this.battleBag(), inBattleItems: !this.battle!.isWild ? true : true, // bag usable in any battle
       switches, balls,
       canCatch: c.canCatch, log: b.log,
+      ended: b.ended ?? null,
       done: s.winner !== undefined ? (s.winner === 'p1' ? 'win' : 'loss') : null,
     };
   }
@@ -499,8 +501,8 @@ class GameSession {
     if (!b.isWild) { b.log = "There's no running from a Trainer battle!"; return this.battleView(); }
     const fc = b.bridge.finalConditions().p1;
     this.writeBackParty(this.state.party.map((p, i) => ({ hpPercent: fc[i]?.hpPercent ?? Math.round((p.currentHp / maxHp(p)) * 100), status: fc[i]?.status ?? (p.status ?? '') })));
-    this.battle = null; this.message = 'Got away safely!';
-    return this.view();
+    b.ended = { result: 'run', message: 'Got away safely!', lines: ['Got away safely!'] };
+    return this.battleView();
   }
 
   // Write each party member's end-of-battle HP/status back onto the saved party.
@@ -539,7 +541,18 @@ class GameSession {
       this.writeBackParty(finalConditions); // persist the beating even on a loss
       msg = 'You were defeated… your team needs healing.';
     }
-    this.battle = null; this.message = msg;
+    // Stage the result on the battle screen — DON'T drop to the overworld yet.
+    // The player taps "Continue" (battleContinue) to dismiss it.
+    const result = catchResult === 'caught' ? 'caught' : (b.bridge.state.winner === 'p1' ? 'win' : 'loss');
+    b.ended = { result, message: msg, lines: [b.log, msg].filter(Boolean) };
+    return this.battleView();
+  }
+
+  // Dismiss the end-of-battle result screen and return to the overworld.
+  battleContinue() {
+    const b = this.battle; if (!b) return this.view();
+    this.message = b.ended?.message ?? '';
+    this.battle = null;
     return this.view();
   }
 }
@@ -553,6 +566,7 @@ export async function dispatch(cmd: string, body: any) {
     case 'turn': return singleton.turn(body.index);
     case 'switchMon': return singleton.switchMon(body.index);
     case 'catch': return singleton.catch(body.ball ?? 'poke');
+    case 'battleContinue': return singleton.battleContinue();
     case 'useItemBattle': return singleton.useItemBattle(body.itemId);
     case 'run': return singleton.run();
     case 'summary': return singleton.summary(body.uid);

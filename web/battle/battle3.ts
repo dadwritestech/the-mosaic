@@ -41,7 +41,7 @@ function append(parent: HTMLElement, ...children: (HTMLElement | HTMLImageElemen
 export class BattleScreenV2 {
   /* --- stage elements --- */
   private container: HTMLElement;
-  private bgImg: HTMLImageElement;
+  private bgImg: HTMLElement;
   private foeImg: HTMLImageElement;
   private playerImg: HTMLImageElement;
   private foeNameplate: Nameplate;
@@ -72,30 +72,34 @@ export class BattleScreenV2 {
     this.container = el('div', 'position:absolute;inset:0;overflow:hidden;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;user-select:none;');
     host.appendChild(this.container);
 
-    /* ---- background ---- */
-    this.bgImg = document.createElement('img') as HTMLImageElement;
-    this.bgImg.src = '/2d/battlebg.png';
-    this.bgImg.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;image-rendering:pixelated;z-index:0;';
+    /* ---- background: clean sky→grass gradient (own platforms, no misaligned bg) ---- */
+    this.bgImg = el('div', 'position:absolute;inset:0;z-index:0;background:linear-gradient(#bfe9ff 0%,#d7f2ff 48%,#bfe6a8 48%,#a6db96 100%);');
     this.container.appendChild(this.bgImg);
 
-    /* ---- foe sprite ---- */
+    /* ---- platform ovals — sprites stand ON these so nothing floats ---- */
+    const FOE = { x: 70, y: 40 }, SELF = { x: 28, y: 72 };
+    const platform = (cx: number, cy: number, w: number) => el('div',
+      `position:absolute;left:${cx}%;top:${cy}%;width:${w}px;height:${Math.round(w * 0.26)}px;transform:translate(-50%,-50%);border-radius:50%;background:radial-gradient(ellipse at center,#cfe3a8 0%,#bcd693 60%,#a7c87d 100%);box-shadow:0 6px 14px rgba(0,0,0,.18);z-index:1;`);
+    this.container.appendChild(platform(FOE.x, FOE.y, 210));
+    this.container.appendChild(platform(SELF.x, SELF.y, 290));
+
+    /* ---- foe sprite: bottom-centre anchored on the foe platform ---- */
     this.foeImg = document.createElement('img') as HTMLImageElement;
-    this.foeImg.style.cssText = 'position:absolute;top:12%;right:18%;image-rendering:pixelated;z-index:1;transform-origin:bottom center;transform:scale(2.2);';
+    this.foeImg.style.cssText = `position:absolute;left:${FOE.x}%;top:${FOE.y}%;image-rendering:pixelated;z-index:2;transform-origin:50% 100%;transform:translate(-50%,-100%) scale(2.2);`;
     this.container.appendChild(this.foeImg);
 
-    /* ---- player sprite ---- */
+    /* ---- player sprite: bottom-centre anchored on the player platform ---- */
     this.playerImg = document.createElement('img') as HTMLImageElement;
-    this.playerImg.style.cssText = 'position:absolute;left:12%;bottom:34%;image-rendering:pixelated;z-index:1;transform-origin:bottom center;transform:scale(2.6);';
+    this.playerImg.style.cssText = `position:absolute;left:${SELF.x}%;top:${SELF.y}%;image-rendering:pixelated;z-index:2;transform-origin:50% 100%;transform:translate(-50%,-100%) scale(2.6);`;
     this.container.appendChild(this.playerImg);
 
-    /* ---- foe nameplate ---- */
+    /* ---- nameplates ---- */
     this.foeNameplate = new Nameplate('foe');
-    this.foeNameplate.el.style.cssText += ';position:absolute;top:6%;left:5%;z-index:2;'; // append — don't wipe the card's own styles
+    this.foeNameplate.el.style.cssText += ';position:absolute;top:8%;left:6%;z-index:3;';
     this.container.appendChild(this.foeNameplate.el);
 
-    /* ---- self nameplate ---- */
     this.selfNameplate = new Nameplate('self');
-    this.selfNameplate.el.style.cssText += ';position:absolute;bottom:32%;right:5%;z-index:2;';
+    this.selfNameplate.el.style.cssText += ';position:absolute;top:50%;right:6%;z-index:3;';
     this.container.appendChild(this.selfNameplate.el);
 
     /* ---- weather / terrain chip ---- */
@@ -176,10 +180,31 @@ export class BattleScreenV2 {
     /* --- log --- */
     this.logLine.textContent = view.log;
 
+    /* --- battle over? show the result + a Continue button, don't auto-close --- */
+    if (view.ended) {
+      this.clearStatsPanel();
+      this.drawEnded(view.ended);
+      return;
+    }
+
     /* --- reset mode each render (turn-based flow) --- */
     this.mode = 'command';
     this.clearStatsPanel();
     this.redrawCommand();
+  }
+
+  private drawEnded(ended: any): void {
+    if (this.tooltip) { this.tooltip.remove(); this.tooltip = null; }
+    while (this.commandArea.firstChild) this.commandArea.removeChild(this.commandArea.firstChild);
+    const colors: Record<string, string> = { win: '#f0b840', loss: '#e5533a', caught: '#46d160', run: '#9fb3d1' };
+    const wrap = el('div', 'display:flex;flex-direction:column;align-items:center;gap:10px;padding:4px 0;');
+    const lines = (ended.lines ?? [ended.message]) as string[];
+    for (const ln of lines) append(wrap, el('div', `font-size:15px;font-weight:700;color:${colors[ended.result] ?? '#fff'};text-align:center;`, ln));
+    const cont = el('button', 'pointer-events:auto;padding:10px 30px;border-radius:10px;border:0;background:#3b82f6;color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;');
+    cont.textContent = 'Continue ▶';
+    cont.addEventListener('click', () => this.onAction('battleContinue'));
+    append(wrap, cont);
+    append(this.commandArea, wrap);
   }
 
   dispose(): void {
