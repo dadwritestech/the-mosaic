@@ -1,4 +1,5 @@
 import { Nameplate } from './nameplate';
+import { select as sfxSelect, confirm as sfxConfirm, hit as sfxHit, faint as sfxFaint, heal as sfxHeal, lowHp as sfxLowHp } from '../audio/sfx';
 
 const TYPE_COLOR: Record<string, string> = {
   Normal: '#9099a1', Fire: '#ff9d55', Water: '#5090d6', Electric: '#e0c133',
@@ -58,11 +59,31 @@ export class BattleScreenV2 {
   /* --- tooltip --- */
   private tooltip: HTMLElement | null = null;
 
+  /* --- type-matchup hint chip --- */
+  private typeHintEl: HTMLElement | null = null;
+
+  /* --- VS intro banner --- */
+  private vsBannerEl: HTMLElement | null = null;
+  private vsBannerTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /* --- low-HP warning --- */
+  private lowHpStop: (() => void) | null = null;
+
   /* --- state --- */
   private mode: 'command' | 'fight' | 'bag' | 'party' = 'command';
   private lastFoeNum: number | undefined;
   private lastSelfNum: number | undefined;
+  private prevFoeNum: number | undefined;
+  private prevSelfNum: number | undefined;
+  private prevFoeHp: number | undefined;
+  private prevSelfHp: number | undefined;
   private _lastView: any;
+  private endedFired: boolean = false;
+
+  /* --- log queue --- */
+  private logQueue: string[] = [];
+  private logTimer: ReturnType<typeof setTimeout> | null = null;
+  private logClickBound: (() => void) | null = null;
 
   constructor(
     host: HTMLElement,
@@ -72,9 +93,13 @@ export class BattleScreenV2 {
     this.container = el('div', 'position:absolute;inset:0;overflow:hidden;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;user-select:none;');
     host.appendChild(this.container);
 
-    /* ---- background: clean sky→grass gradient (own platforms, no misaligned bg) ---- */
-    this.bgImg = el('div', 'position:absolute;inset:0;z-index:0;background:linear-gradient(#bfe9ff 0%,#d7f2ff 48%,#bfe6a8 48%,#a6db96 100%);');
+    /* ---- background: softer sky→grass gradient with blended horizon ---- */
+    this.bgImg = el('div', 'position:absolute;inset:0;z-index:0;background:linear-gradient(#afe0ff 0%,#d6f1ff 40%,#cfeecb 46%,#b6dd98 52%,#95cf80 100%);');
     this.container.appendChild(this.bgImg);
+
+    /* ---- subtle sun glow overlay ---- */
+    const sunGlow = el('div', 'position:absolute;inset:0;z-index:0;background:radial-gradient(circle at 75% 18%,rgba(255,255,240,.55),transparent 45%);pointer-events:none;');
+    this.container.appendChild(sunGlow);
 
     /* ---- platform ovals — sprites stand ON these so nothing floats ---- */
     const FOE = { x: 70, y: 40 }, SELF = { x: 28, y: 72 };
@@ -135,7 +160,33 @@ export class BattleScreenV2 {
   /*  public API                                                       */
   /* ================================================================ */
 
+  private injectStyles(): void {
+    if (document.getElementById('battle-anim-style')) return;
+    const styleEl = document.createElement('style');
+    styleEl.id = 'battle-anim-style';
+    styleEl.textContent = `
+      @keyframes foeEnter { from { transform: translate(40px,-100%) scale(2.2); opacity:0 } to { transform: translate(-50%,-100%) scale(2.2); opacity:1 } }
+      @keyframes selfEnter { from { transform: translate(-110px,-100%) scale(2.6); opacity:0 } to { transform: translate(-50%,-100%) scale(2.6); opacity:1 } }
+      @keyframes faint { to { transform: translate(-50%,-40%) scale(2.0); opacity:0 } }
+      @keyframes floatUp { from { opacity:0; transform:translate(-50%,-50%) } 20% { opacity:1 } to { opacity:0; transform:translate(-50%,-160%) } }
+      @keyframes vsBannerAnim { 0% { opacity:0; transform:translate(-50%,-50%) scale(.85) } 15% { opacity:1; transform:translate(-50%,-50%) scale(1) } 75% { opacity:1 } 100% { opacity:0 } }
+      @keyframes lowHpPulse { 0%,100% { box-shadow:0 0 0 0 rgba(229,83,58,0) } 50% { box-shadow:0 0 12px 4px rgba(229,83,58,.45) } }
+      @keyframes screenShake { 0%,100% { transform:translate(0,0) } 20% { transform:translate(-5px,3px) } 40% { transform:translate(4px,-4px) } 60% { transform:translate(-3px,2px) } 80% { transform:translate(2px,-1px) } }
+    `;
+    document.head.appendChild(styleEl);
+  }
+
+  private floatText(targetSide: 'foe' | 'self', text: string, color: string): void {
+    const coords = targetSide === 'foe' ? { x: 70, y: 40 } : { x: 28, y: 72 };
+    const div = document.createElement('div');
+    div.style.cssText = `position:absolute;left:${coords.x}%;top:${coords.y}%;z-index:5;pointer-events:none;font-weight:800;font-size:20px;color:${color};text-shadow:0 2px 4px rgba(0,0,0,.5);transform:translate(-50%,-50%);animation:floatUp 1.1s ease-out forwards;`;
+    div.textContent = text;
+    this.container.appendChild(div);
+    setTimeout(() => { div.remove(); }, 1200);
+  }
+
   render(view: any): void {
+    this.injectStyles();
     this._lastView = view;
 
     /* --- sprites (only update src when num changes, avoids gif restart) --- */
@@ -146,6 +197,42 @@ export class BattleScreenV2 {
     if (view.self.num !== this.lastSelfNum) {
       this.playerImg.src = `/pkmn/back/${view.self.num}.gif`;
       this.lastSelfNum = view.self.num;
+    }
+
+    /* --- entry animations (fire once when species changes) --- */
+    if (view.foe.num !== this.prevFoeNum) {
+      this.foeImg.style.animation = 'foeEnter .5s ease-out';
+      this.prevFoeNum = view.foe.num;
+      this.showVsBanner(view);
+    }
+    if (view.self.num !== this.prevSelfNum) {
+      this.playerImg.style.animation = 'selfEnter .5s ease-out';
+      this.prevSelfNum = view.self.num;
+    }
+
+    /* --- floating callouts (HP drops + stat changes) --- */
+    try {
+      if (this.prevFoeHp !== undefined && view.foe.hpPercent < this.prevFoeHp) {
+        const drop = this.prevFoeHp - view.foe.hpPercent;
+        this.floatText('foe', '-' + drop + '%', '#ff5544');
+        try { sfxHit(drop > 15 ? 2 : 1); } catch { /* */ }
+      }
+      if (this.prevSelfHp !== undefined && view.self.hpPercent < this.prevSelfHp) {
+        const drop = this.prevSelfHp - view.self.hpPercent;
+        this.floatText('self', '-' + drop + '%', '#ffd24d');
+        try { sfxHit(1); } catch { /* */ }
+      }
+      this.prevFoeHp = view.foe.hpPercent;
+      this.prevSelfHp = view.self.hpPercent;
+
+      if (view.log) {
+        const roseMatch = view.log.match(/rose/);
+        const fellMatch = view.log.match(/fell/);
+        if (roseMatch) this.floatText('self', '\u25B2', '#46d160');
+        if (fellMatch) this.floatText('foe', '\u25BC', '#e5533a');
+      }
+    } catch {
+      /* defensive — a parse miss must not break rendering */
     }
 
     /* --- nameplates --- */
@@ -166,6 +253,29 @@ export class BattleScreenV2 {
       status: view.self.status,
     });
 
+    /* --- screen shake on heavy hits (HP drop >= 15%) --- */
+    try {
+      if (this.prevFoeHp !== undefined && view.foe.hpPercent < this.prevFoeHp) {
+        const drop = this.prevFoeHp - view.foe.hpPercent;
+        if (drop >= 15) this.triggerShake();
+      }
+    } catch { /* defensive */ }
+
+    /* --- low-HP warning (<=20% HP: pulse + audio) --- */
+    const selfHpPct = view.self?.hpPercent;
+    if (selfHpPct !== undefined && selfHpPct <= 20 && !view.ended) {
+      this.selfNameplate.el.style.animation = 'lowHpPulse 1.2s ease-in-out infinite';
+      if (!this.lowHpStop) {
+        try { this.lowHpStop = sfxLowHp().stop; } catch { /* */ }
+      }
+    } else {
+      this.selfNameplate.el.style.animation = '';
+      if (this.lowHpStop) { this.lowHpStop(); this.lowHpStop = null; }
+    }
+
+    /* --- type-matchup hint --- */
+    this.updateTypeHint(view);
+
     /* --- weather / terrain chip --- */
     const parts: string[] = [];
     if (view.weather) parts.push(view.weather);
@@ -177,20 +287,237 @@ export class BattleScreenV2 {
       this.weatherChip.style.display = 'none';
     }
 
-    /* --- log --- */
-    this.logLine.textContent = view.log;
+    /* --- log queue: multi-line logs are revealed one-by-one --- */
+    this.updateLogQueue(view.log ?? '');
 
     /* --- battle over? show the result + a Continue button, don't auto-close --- */
     if (view.ended) {
+      this.clearLogQueue();
+      this.hideVsBanner();
+      if (!this.endedFired) {
+        this.endedFired = true;
+        try { sfxFaint(); } catch { /* */ }
+        if (view.ended.result === 'win') {
+          this.foeImg.style.animation = 'faint .6s ease-in forwards';
+        } else if (view.ended.result === 'loss') {
+          this.playerImg.style.animation = 'faint .6s ease-in forwards';
+        }
+      }
       this.clearStatsPanel();
       this.drawEnded(view.ended);
       return;
+    } else {
+      this.endedFired = false;
     }
 
     /* --- reset mode each render (turn-based flow) --- */
     this.mode = 'command';
     this.clearStatsPanel();
     this.redrawCommand();
+  }
+
+  /* ================================================================ */
+  /*  log queue                                                        */
+  /* ================================================================ */
+
+  private updateLogQueue(raw: string): void {
+    if (!raw) return;
+    const lines = raw.split('\n').filter((l) => l.trim() !== '');
+
+    /* single-line: show immediately, no queue */
+    if (lines.length === 1) {
+      this.clearLogQueue();
+      this.logLine.textContent = lines[0];
+      this.enableCommands();
+      return;
+    }
+
+    /* multi-line: drain existing queue and enqueue new lines */
+    this.clearLogQueue();
+    this.logQueue = lines;
+    this.showNextLogLine();
+  }
+
+  private showNextLogLine(): void {
+    if (this.logQueue.length === 0) {
+      this.enableCommands();
+      return;
+    }
+    this.disableCommands();
+    this.logLine.textContent = this.logQueue.shift() ?? '';
+    this.logTimer = setTimeout(() => this.showNextLogLine(), 900);
+  }
+
+  private clearLogQueue(): void {
+    if (this.logTimer !== null) { clearTimeout(this.logTimer); this.logTimer = null; }
+    this.logQueue.length = 0;
+    this.removeLogClick();
+  }
+
+  private disableCommands(): void {
+    this.commandArea.style.pointerEvents = 'none';
+    this.commandArea.style.opacity = '0.5';
+    this.addLogClick();
+  }
+
+  private enableCommands(): void {
+    this.commandArea.style.pointerEvents = '';
+    this.commandArea.style.opacity = '';
+    this.removeLogClick();
+  }
+
+  /* click on log bar to fast-forward to next message */
+  private addLogClick(): void {
+    this.removeLogClick();
+    this.logClickBound = () => {
+      if (this.logTimer !== null) { clearTimeout(this.logTimer); this.logTimer = null; }
+      this.showNextLogLine();
+    };
+    this.logLine.addEventListener('click', this.logClickBound);
+  }
+
+  private removeLogClick(): void {
+    if (this.logClickBound && this.logLine) {
+      this.logLine.removeEventListener('click', this.logClickBound);
+      this.logClickBound = null;
+    }
+  }
+
+  /* ================================================================ */
+  /*  type-matchup hint                                                */
+  /* ================================================================ */
+
+  private updateTypeHint(view: any): void {
+    /* feature-detect: only run if moves[] and foe.types exist */
+    const moves = view.moves ?? [];
+    const foeTypes = view.foe?.types;
+    if (!moves.length || !foeTypes || !foeTypes.length) {
+      this.removeTypeHint();
+      return;
+    }
+
+    /* find the best (highest) effectiveness among current moves */
+    let bestEff: number | null = null;
+    for (const m of moves) {
+      const eff = m.eff;
+      if (eff != null && (bestEff === null || eff > bestEff)) bestEff = eff;
+    }
+    if (bestEff === null) {
+      this.removeTypeHint();
+      return;
+    }
+
+    /* SUPER EFFECTIVE (green) if any move eff >= 2 */
+    if (bestEff >= 2) {
+      if (!this.typeHintEl) {
+        this.typeHintEl = el('div',
+          'position:absolute;top:22%;left:6%;z-index:3;display:flex;gap:4px;pointer-events:none;',
+        );
+        this.container.appendChild(this.typeHintEl);
+      }
+      const label = bestEff >= 4 ? '4× SUPER EFFECTIVE' : '2× SUPER EFFECTIVE';
+      const chip = el('span',
+        'font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px;background:rgba(46,204,113,.85);color:#fff;white-space:nowrap;backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);',
+        label,
+      );
+      while (this.typeHintEl.firstChild) this.typeHintEl.removeChild(this.typeHintEl.firstChild);
+      this.typeHintEl.appendChild(chip);
+      return;
+    }
+
+    /* RESISTED (grey) if max eff < 1 (and not null/1) */
+    if (bestEff < 1) {
+      if (!this.typeHintEl) {
+        this.typeHintEl = el('div',
+          'position:absolute;top:22%;left:6%;z-index:3;display:flex;gap:4px;pointer-events:none;',
+        );
+        this.container.appendChild(this.typeHintEl);
+      }
+      const chip = el('span',
+        'font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px;background:rgba(127,140,141,.85);color:#fff;white-space:nowrap;backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);',
+        'RESISTED',
+      );
+      while (this.typeHintEl.firstChild) this.typeHintEl.removeChild(this.typeHintEl.firstChild);
+      this.typeHintEl.appendChild(chip);
+      return;
+    }
+
+    /* else hide (eff === 1 or all null) */
+    this.removeTypeHint();
+  }
+
+  private removeTypeHint(): void {
+    if (this.typeHintEl) {
+      this.typeHintEl.remove();
+      this.typeHintEl = null;
+    }
+  }
+
+  /* ================================================================ */
+  /*  VS intro banner                                                  */
+  /* ================================================================ */
+
+  private showVsBanner(view: any): void {
+    this.hideVsBanner();
+
+    const foeSpecies = view.foe?.species ?? '';
+    const isWild = view.isWild === true;
+
+    /* build the overlay */
+    const overlay = el('div',
+      'position:absolute;inset:0;z-index:5;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45);pointer-events:none;animation:vsBannerAnim 1.6s ease-in-out forwards;',
+    );
+
+    const card = el('div',
+      'display:flex;flex-direction:column;align-items:center;gap:6px;padding:18px 36px;border-radius:14px;background:rgba(15,22,36,.92);border:1px solid rgba(255,255,255,.15);box-shadow:0 8px 32px rgba(0,0,0,.5);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);',
+    );
+
+    const vsLabel = el('div',
+      'font-size:13px;font-weight:700;color:#f0b840;letter-spacing:4px;text-transform:uppercase;',
+      'VS',
+    );
+
+    let message = '';
+    if (isWild) {
+      message = `A wild ${foeSpecies} appeared!`;
+    } else {
+      /* parse trainer name from log: "{Name} wants to battle!" */
+      const log = view.log ?? '';
+      const trainerMatch = log.match(/^(.+?)\s+wants\s+to\s+battle/i);
+      const trainerName = trainerMatch ? trainerMatch[1] : 'A trainer';
+      message = `${trainerName} wants to battle!`;
+    }
+
+    const msgEl = el('div',
+      'font-size:16px;font-weight:700;color:#fff;text-align:center;',
+      message,
+    );
+
+    append(card, vsLabel, msgEl);
+    overlay.appendChild(card);
+    this.container.appendChild(overlay);
+    this.vsBannerEl = overlay;
+
+    /* auto-hide after animation completes (~1.6s) */
+    this.vsBannerTimer = setTimeout(() => {
+      this.hideVsBanner();
+    }, 1650);
+  }
+
+  private hideVsBanner(): void {
+    if (this.vsBannerTimer !== null) { clearTimeout(this.vsBannerTimer); this.vsBannerTimer = null; }
+    if (this.vsBannerEl) {
+      this.vsBannerEl.remove();
+      this.vsBannerEl = null;
+    }
+  }
+
+  /* --- screen shake --- */
+  private triggerShake(): void {
+    this.container.style.animation = 'none';
+    void this.container.offsetHeight; // force reflow
+    this.container.style.animation = 'screenShake 0.3s ease-out';
+    setTimeout(() => { this.container.style.animation = ''; }, 350);
   }
 
   private drawEnded(ended: any): void {
@@ -208,6 +535,10 @@ export class BattleScreenV2 {
   }
 
   dispose(): void {
+    this.clearLogQueue();
+    this.removeTypeHint();
+    this.hideVsBanner();
+    if (this.lowHpStop) { this.lowHpStop(); this.lowHpStop = null; }
     this.container.remove();
   }
 
@@ -317,6 +648,7 @@ export class BattleScreenV2 {
     btn.addEventListener('mouseenter', () => {
       btn.style.filter = 'brightness(1.15)';
       this.showTooltip(btn, m);
+      try { sfxSelect(); } catch { /* */ }
     });
     btn.addEventListener('mouseleave', () => {
       btn.style.filter = '';
@@ -324,7 +656,10 @@ export class BattleScreenV2 {
     });
 
     /* click — use the move's own server index (1-based), not the grid position */
-    btn.addEventListener('click', () => { this.onAction('turn', { index: m.index ?? index } ); });
+    btn.addEventListener('click', () => {
+      try { sfxConfirm(); } catch { /* */ }
+      this.onAction('turn', { index: m.index ?? index });
+    });
 
     return btn;
   }
@@ -396,6 +731,7 @@ export class BattleScreenV2 {
           'Use',
         );
         useBtn.addEventListener('click', () => {
+          try { sfxHeal(); } catch { /* */ }
           this.onAction('useItemBattle', { itemId: item.itemId });
         });
         append(row, info, useBtn);

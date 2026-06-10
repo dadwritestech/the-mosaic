@@ -17,6 +17,9 @@ const BOY_SRC_H = 48;
 // direction → row index  (0=down, 1=left, 2=right, 3=up)
 const DIR_ROW: Record<string, number> = { down: 0, left: 1, right: 2, up: 3 };
 
+// grass-rustle particle
+interface RustleParticle { x: number; y: number; born: number; life: number; }
+
 // ── class ───────────────────────────────────────────────────────
 export class OverworldScreen2D {
   private canvas: HTMLCanvasElement;
@@ -45,6 +48,10 @@ export class OverworldScreen2D {
   // input / animation
   private facing = 'down';
   private walkUntil = 0;
+
+  // grass rustle particles
+  private rustles: RustleParticle[] = [];
+  private lastRustleTile = '';
 
   private keyHandler: ((e: KeyboardEvent) => void) | null;
   private resizeHandler: (() => void) | null;
@@ -210,6 +217,30 @@ export class OverworldScreen2D {
     this.pvis.x += (targetX - this.pvis.x) * lerpFactor;
     this.pvis.y += (targetY - this.pvis.y) * lerpFactor;
 
+    const tiles: any = v.tiles;
+    if (!tiles || !tiles.length) return;
+
+    // ── grass rustle trigger (when player arrives at a new grass tile) ──
+    const rtx = Math.round(this.pvis.x);
+    const rty = Math.round(this.pvis.y);
+    const tileKey = rtx + ',' + rty;
+    if (tileKey !== this.lastRustleTile) {
+      const tile = (rty >= 0 && rty < tiles.length && rtx >= 0 && rtx < tiles[0].length) ? tiles[rty][rtx] : null;
+      if (tile === 'grass') {
+        const cx = rtx * CELL + CELL / 2 - this.cam.x;
+        const cy = rty * CELL + CELL / 2 - this.cam.y;
+        for (let i = 0; i < 7; i++) {
+          this.rustles.push({
+            x: cx + ((Math.sin(i * 1.7 + rtx * 3) * 0.5 + 0.5) * CELL * 0.6 - CELL * 0.3),
+            y: cy + ((Math.cos(i * 2.3 + rty * 5) * 0.5 + 0.5) * CELL * 0.4),
+            born: performance.now(),
+            life: 250,
+          });
+        }
+      }
+      this.lastRustleTile = tileKey;
+    }
+
     // ── smooth camera (center on player in screen px) ───────────
     const playerScreenX = this.pvis.x * CELL + CELL / 2;
     const playerScreenY = this.pvis.y * CELL + CELL / 2;
@@ -228,9 +259,6 @@ export class OverworldScreen2D {
     const endTX   = startTX + Math.ceil(W / CELL) + 2;
     const endTY   = startTY + Math.ceil(H / CELL) + 2;
 
-    const tiles: any = v.tiles;
-    if (!tiles || !tiles.length) return;
-
     // ── pass 1: ground layer ────────────────────────────────────
     for (let ty = startTY; ty < endTY; ty++) {
       for (let tx = startTX; tx < endTX; tx++) {
@@ -244,6 +272,18 @@ export class OverworldScreen2D {
         const dy = ty * CELL - this.cam.y;
 
         ctx.drawImage(this.imgTileset, sx, sy, TILE_SRC, TILE_SRC, dx, dy, CELL, CELL);
+
+        // subtle grass flecks on plain grass cells
+        if (tile === 'field') {
+          const h = ((tx * 73856093) ^ (ty * 19349663)) >>> 0;
+          if (h % 6 === 0) {
+            const fleckSize = 2 + (h % 2); // 2 or 3 px
+            const fx = dx + ((h * 17) % (CELL - fleckSize));
+            const fy = dy + ((h * 31) % (CELL - fleckSize));
+            ctx.fillStyle = 'rgba(60,110,60,0.18)';
+            ctx.fillRect(fx, fy, fleckSize, fleckSize);
+          }
+        }
       }
     }
 
@@ -274,6 +314,37 @@ export class OverworldScreen2D {
 
     // ── draw player ─────────────────────────────────────────────
     this.drawPlayer(ctx);
+
+    // ── draw grass rustle particles ─────────────────────────────
+    const now = performance.now();
+    for (let i = this.rustles.length - 1; i >= 0; i--) {
+      const r = this.rustles[i];
+      const age = now - r.born;
+      if (age > r.life) { this.rustles.splice(i, 1); continue; }
+      const t = age / r.life;
+      const alpha = (1 - t) * 0.6;
+      ctx.strokeStyle = `rgba(180,230,140,${alpha})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      const arcY = r.y - t * 12;
+      ctx.moveTo(r.x - 4, arcY);
+      ctx.quadraticCurveTo(r.x, arcY - 6, r.x + 4, arcY);
+      ctx.stroke();
+    }
+
+    // ── day/night tint overlay (feature-detect v.time) ──────────
+    if (v.time) {
+      let tint: string | undefined;
+      if (v.time === 'night') {
+        tint = 'rgba(20,30,80,0.28)';
+      } else if (v.time === 'morning') {
+        tint = 'rgba(255,160,80,0.12)';
+      }
+      if (tint) {
+        ctx.fillStyle = tint;
+        ctx.fillRect(0, 0, W, H);
+      }
+    }
   };
 
   // ── ground tile type → [row, col] in tileset ──────────────────
