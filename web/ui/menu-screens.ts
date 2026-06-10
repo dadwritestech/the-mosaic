@@ -8,6 +8,9 @@ function el(tag: string, style: string, text?: string): HTMLElement {
 const BTN = 'pointer-events:auto;background:#3a5a8c;color:#fff;border:0;border-radius:7px;padding:7px 12px;cursor:pointer;font-size:13px;font-weight:600';
 const BTN_ALT = 'pointer-events:auto;background:#4a4a55;color:#fff;border:0;border-radius:7px;padding:7px 12px;cursor:pointer;font-size:13px;font-weight:600';
 const STATUS_COLOR: Record<string, string> = { par: '#d8a200', psn: '#9a3fb0', tox: '#7a2a8f', brn: '#d8642a', slp: '#7a8694', frz: '#37b0d8' };
+const TYPE_COLORS: Record<string, string> = { Normal:'#9099a1', Fire:'#ff9d55', Water:'#5090d6', Electric:'#e0c133', Grass:'#63bc5a', Ice:'#73cec0', Fighting:'#ce4069', Poison:'#ab6ac8', Ground:'#d97845', Flying:'#8fa9de', Psychic:'#fa7179', Bug:'#90c12c', Rock:'#c5b78c', Ghost:'#5269ad', Dragon:'#0b6dc3', Dark:'#5a5366', Steel:'#5a8ea1', Fairy:'#ec8fe6' };
+const STAT_KEYS = ['hp', 'atk', 'def', 'spa', 'spd', 'spe'] as const;
+const STAT_LABELS: Record<string, string> = { hp: 'HP', atk: 'Atk', def: 'Def', spa: 'SpA', spd: 'SpD', spe: 'Spe' };
 
 function hpBar(hp: number, maxHp: number, hpPercent: number): HTMLElement {
   const pct = maxHp > 0 ? Math.round((hp / maxHp) * 100) : 0;
@@ -27,63 +30,94 @@ function rowDivider(): HTMLElement {
 
 export function renderSummary(o: any, _send: Send): HTMLElement {
   const mon = o.mon;
-  const root = el('div', 'color:#cbd5e1;font-size:14px;line-height:1.5');
+  const root = el('div', 'color:#cbd5e1;font-size:14px;line-height:1.5;min-width:320px');
 
-  // Header: Species  ♂/♀  Lv.N
+  // Sprite + header row
+  const topRow = el('div', 'display:flex;gap:16px;align-items:flex-start;margin-bottom:10px');
+  const sprite = document.createElement('img') as HTMLImageElement;
+  sprite.src = `/pkmn/${mon.num}.gif`;
+  sprite.style.cssText = 'width:64px;height:64px;image-rendering:pixelated;flex-shrink:0;margin-top:4px;';
+  topRow.appendChild(sprite);
+
+  const infoCol = el('div', 'display:flex;flex-direction:column;gap:6px;flex:1;min-width:0;');
+
+  // Name + gender + level
+  const nameLine = el('div', 'display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;');
+  nameLine.appendChild(el('span', 'font-size:18px;font-weight:700;color:#fff;', mon.species));
   const genderChar = mon.gender === 'M' ? '♂' : mon.gender === 'F' ? '♀' : '';
-  const headerLine = el('div', 'font-size:18px;font-weight:700;color:#fff;margin-bottom:2px');
-  headerLine.appendChild(el('span', '', `${mon.species}`));
-  if (genderChar) headerLine.appendChild(el('span', 'margin-left:6px;color:#9fb3d1', genderChar));
-  headerLine.appendChild(el('span', 'margin-left:8px;color:#9fb3d1', `Lv.${mon.level}`));
-  root.appendChild(headerLine);
+  if (genderChar) {
+    nameLine.appendChild(el('span', `color:${mon.gender === 'M' ? '#5b9be6' : '#f28e8e'};font-size:14px;`, genderChar));
+  }
+  nameLine.appendChild(el('span', 'color:#9fb3d1;font-size:14px;', `Lv.${mon.level}`));
+  infoCol.appendChild(nameLine);
 
-  // Type · Ability · Nature
-  const typeStr = mon.types.join(' · ');
-  const infoLine = el('div', 'color:#9fb3d1;font-size:13px;margin-bottom:4px');
-  infoLine.appendChild(el('span', '', `${typeStr} · Ability: ${mon.ability} · ${mon.nature}`));
-  root.appendChild(infoLine);
+  // Type chips
+  const typeRow = el('div', 'display:flex;gap:4px;flex-wrap:wrap;');
+  (mon.types ?? []).forEach((t: string) => {
+    typeRow.appendChild(el('span', `font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;background:${TYPE_COLORS[t] ?? '#666'};color:#fff;`, t));
+  });
+  infoCol.appendChild(typeRow);
+  topRow.appendChild(infoCol);
+  root.appendChild(topRow);
 
   root.appendChild(rowDivider());
 
-  // HP bar
+  // HP bar + status
   const hpRow = el('div', 'display:flex;align-items:center;gap:8px;margin-bottom:6px');
-  hpRow.appendChild(el('span', 'color:#fff;font-weight:600;font-size:13px;min-width:70px', `${mon.hp}/${mon.maxHp}`));
+  hpRow.appendChild(el('span', 'color:#fff;font-weight:600;font-size:13px;min-width:70px;', `${mon.hp}/${mon.maxHp}`));
   hpRow.appendChild(hpBar(mon.hp, mon.maxHp, mon.hpPercent));
   if (mon.status && STATUS_COLOR[mon.status]) {
-    hpRow.appendChild(el('span', `font-size:11px;font-weight:700;color:${STATUS_COLOR[mon.status]};margin-left:4px;text-transform:uppercase`, mon.status));
+    hpRow.appendChild(el('span', `font-size:11px;font-weight:700;color:${STATUS_COLOR[mon.status]};margin-left:4px;text-transform:uppercase;`, mon.status));
   }
   root.appendChild(hpRow);
 
   root.appendChild(rowDivider());
 
-  // Stats grid
+  // Stats with proportional bars (scale 0..255)
   root.appendChild(sectionLabel('Stats'));
-  const statLabels = ['hp', 'atk', 'def', 'spa', 'spd', 'spe'];
-  const statDisplay = ['HP', 'Atk', 'Def', 'SpA', 'SpD', 'Spe'];
-  for (let i = 0; i < statLabels.length; i++) {
-    const key = statLabels[i];
-    const row = el('div', 'display:flex;justify-content:space-between;padding:2px 0');
-    row.appendChild(el('span', 'color:#9fb3d1', statDisplay[i]));
-    row.appendChild(el('span', 'color:#fff;font-weight:600', String(mon.stats[key])));
+  for (let i = 0; i < STAT_KEYS.length; i++) {
+    const key = STAT_KEYS[i];
+    const val = (mon.stats?.[key] ?? 0) as number;
+    const pct = Math.min(100, Math.round((val / 255) * 100));
+    const row = el('div', 'display:flex;align-items:center;gap:8px;padding:2px 0;');
+    row.appendChild(el('span', 'color:#9fb3d1;font-size:12px;min-width:28px;', STAT_LABELS[key]));
+    const barOuter = el('div', 'flex:1;height:6px;background:#0f1726;border-radius:3px;overflow:hidden;');
+    barOuter.appendChild(el('div', `height:100%;width:${pct}%;background:#5b8dd9;border-radius:3px;`));
+    row.appendChild(barOuter);
+    row.appendChild(el('span', 'color:#fff;font-weight:600;font-size:12px;min-width:24px;text-align:right;', String(val)));
     root.appendChild(row);
+  }
+
+  // Nature
+  if (mon.nature) {
+    root.appendChild(rowDivider());
+    root.appendChild(el('div', 'font-size:13px;color:#cbd5e1;', `Nature: ${mon.nature}`));
+  }
+
+  // Ability + description
+  if (mon.ability) {
+    root.appendChild(rowDivider());
+    root.appendChild(sectionLabel('Ability'));
+    root.appendChild(el('div', 'color:#fff;font-weight:600;font-size:13px;', mon.ability));
+    if (mon.abilityDesc) {
+      root.appendChild(el('div', 'color:#94a3b8;font-size:12px;margin-top:2px;', mon.abilityDesc));
+    }
   }
 
   // Held item
   if (mon.heldItem) {
     root.appendChild(rowDivider());
     root.appendChild(sectionLabel('Held Item'));
-    root.appendChild(el('div', 'color:#fff', mon.heldItem));
+    root.appendChild(el('div', 'color:#fff;font-size:13px;', mon.heldItem));
   }
 
   // EXP bar
   root.appendChild(rowDivider());
   root.appendChild(sectionLabel('Experience'));
   const expRow = el('div', 'margin-bottom:4px');
-  expRow.appendChild(el('span', 'color:#9fb3d1;font-size:13px', `EXP — ${mon.expToNext} to next level`));
-  expRow.appendChild(el('div', 'margin-top:4px'));
-  const expBarOuter = el('div', 'height:7px;background:#0f1726;border-radius:4px;overflow:hidden;margin-top:4px');
-  const expBarInner = el('div', `height:100%;width:${mon.expPercent}%;background:#5b8dd9;border-radius:4px`);
-  expBarOuter.appendChild(expBarInner);
+  expRow.appendChild(el('span', 'color:#9fb3d1;font-size:13px;', `EXP — ${mon.expToNext} to next level`));
+  const expBarOuter = el('div', 'height:7px;background:#0f1726;border-radius:4px;overflow:hidden;margin-top:4px;');
+  expBarOuter.appendChild(el('div', `height:100%;width:${mon.expPercent}%;background:#5b8dd9;border-radius:4px;`));
   expRow.appendChild(expBarOuter);
   root.appendChild(expRow);
 
@@ -91,9 +125,9 @@ export function renderSummary(o: any, _send: Send): HTMLElement {
   root.appendChild(rowDivider());
   root.appendChild(sectionLabel('Moves'));
   for (const m of mon.moves) {
-    const moveRow = el('div', 'display:flex;justify-content:space-between;padding:3px 0');
-    moveRow.appendChild(el('span', 'color:#fff;font-weight:600', m.name));
-    moveRow.appendChild(el('span', 'color:#9fb3d1;font-size:12px', `${m.type.toUpperCase()} PP ${m.pp}/${m.maxpp}`));
+    const moveRow = el('div', 'display:flex;justify-content:space-between;padding:3px 0;');
+    moveRow.appendChild(el('span', 'color:#fff;font-weight:600;', m.name));
+    moveRow.appendChild(el('span', 'color:#9fb3d1;font-size:12px;', `${m.type.toUpperCase()} PP ${m.pp}/${m.maxpp}`));
     root.appendChild(moveRow);
   }
 

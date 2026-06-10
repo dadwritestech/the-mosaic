@@ -12,6 +12,7 @@ import { advanceStep, timeOfDay } from '../src/game/clock';
 import { wildMoveset } from '../src/game/learnset';
 import { rollEncounter } from '../src/content/encounters';
 import { getLocation, getGym, getShop } from '../src/content/region';
+import { ALL_LOCATIONS } from '../src/content/region/index';
 import { healParty } from '../src/game/center';
 import { applyItem } from '../src/game/items/effects';
 import { getItem } from '../src/game/items/catalog';
@@ -54,6 +55,7 @@ class GameSession {
   private saves = new FileSaveStore('.saves');
   private boxIndex = 0;                 // PC box currently being viewed
   private trainerGym: Record<string, string> = {}; // trainerId -> gymId, for Vs-Seeker rematches
+  private visitedLocations = new Set<string>();     // location ids the player has entered
 
   constructor() {
     let g = addToParty(createNewGame({ difficultyMode: 'normal', nuzlocke: false }),
@@ -68,6 +70,7 @@ class GameSession {
     this.state = g;
     for (const p of this.state.party) this.state = registerCaught(this.state, this.dexNum(p.species)); // starters in the dex
     const m = this.map(); this.px = m.spawn.x; this.py = m.spawn.y;
+    this.visitedLocations.add(this.locationId);
   }
   private map(): TileMap { return SLICE_MAPS[this.locationId]; }
   private dexNum(species: string): number { return (Sim.Dex as any).forGen(9).species.get(species).num; }
@@ -95,7 +98,7 @@ class GameSession {
     this.px = nx; this.py = ny;
     this.state = advanceStep(this.state);
     const meta = metaAt(m, nx, ny);
-    if (meta.exitTo) { this.locationId = meta.exitTo; const nm = this.map(); this.px = nm.spawn.x; this.py = nm.spawn.y; return this.view(); }
+    if (meta.exitTo) { this.locationId = meta.exitTo; this.visitedLocations.add(this.locationId); const nm = this.map(); this.px = nm.spawn.x; this.py = nm.spawn.y; return this.view(); }
     if (meta.npcId) { this.message = 'Aethel: The Core remembers every trainer who walked here.'; return this.view(); }
     if (meta.gymId) return this.startGym(meta.gymId);
     const t = tileAt(m, nx, ny);
@@ -555,6 +558,169 @@ class GameSession {
     this.battle = null;
     return this.view();
   }
+
+  // ---- Meta-screen commands (Batch E/F/G/H) --------------------------
+
+  /** Title screen: check if any save slot has data. */
+  async title() {
+    const slots = await this.saves.list();
+    return { screen: 'title' as const, hasSave: slots.length > 0 };
+  }
+
+  /** New game: signal dispatch to create a fresh session. */
+  newGame(): { __reset: true } {
+    return { __reset: true };
+  }
+
+  /** Load game: try the first available save slot. */
+  async loadGame(): Promise<any> {
+    const slots = await this.saves.list();
+    if (!slots.length) return this.view();
+    const json = await this.saves.load(slots[0].slot);
+    if (!json) return this.view();
+    return { __load: json };
+  }
+
+  /** Trainer card: summary of the player. */
+  trainerCard() {
+    const dex = (Sim.Dex as any).forGen(9);
+    return {
+      screen: 'trainercard' as const,
+      money: this.state.money,
+      badges: this.state.badges,
+      party: this.state.party.map((p) => ({
+        species: p.species, num: this.dexNum(p.species), level: p.level,
+        hpPercent: Math.round((p.currentHp / maxHp(p)) * 100),
+      })),
+      dexSeen: this.state.pokedex.seen.size,
+      dexCaught: this.state.pokedex.caught.size,
+    };
+  }
+
+  /** Enhanced Pokédex: entries with detail data for caught species. */
+  pokedex() {
+    const dex = (Sim.Dex as any).forGen(9);
+    // Showdown's species.get() keys on name/id, not dex number — build a
+    // number→species map (first/base forme wins) so num lookups resolve.
+    const byNum = new Map<number, any>();
+    for (const s of dex.species.all()) {
+      if (s.num > 0 && !byNum.has(s.num)) byNum.set(s.num, s);
+    }
+    const nums = new Set<number>([...this.state.pokedex.seen, ...this.state.pokedex.caught]);
+    const entries: any[] = [];
+    for (const num of [...nums].sort((a, b) => a - b)) {
+      const sp = byNum.get(num);
+      if (!sp) continue;
+      const seen = this.state.pokedex.seen.has(num);
+      const caught = this.state.pokedex.caught.has(num);
+      const entry: any = {
+        num, name: sp.name, seen, caught,
+        types: sp.types as string[],
+      };
+      // Only include detail data for caught species
+      if (caught) {
+        entry.flavor = sp.description ?? '';
+        // Base stats from the species data
+        const bst = sp.baseStats;
+        if (bst) {
+          entry.baseStats = { hp: bst.hp ?? 0, atk: bst.atk ?? 0, def: bst.def ?? 0, spa: bst.spa ?? 0, spd: bst.spd ?? 0, spe: bst.spe ?? 0 };
+        }
+      }
+      entries.push(entry);
+    }
+    return {
+      screen: 'pokedex' as const,
+      entries,
+      seenCount: this.state.pokedex.seen.size,
+      caughtCount: this.state.pokedex.caught.size,
+    };
+  }
+
+  /** Region map: location list with visit tracking. */
+  regionMap() {
+    // Normalized positions on a 0..1 grid for drawing pins.
+    // Laid out in a rough west-to-east / north-to-south progression.
+    const positions: Record<string, { x: number; y: number }> = {
+      'aethels-rest':      { x: 0.10, y: 0.55 },
+      'whispering-path':   { x: 0.20, y: 0.45 },
+      'verdant-hollow':    { x: 0.30, y: 0.50 },
+      'verdant-tangle':    { x: 0.38, y: 0.40 },
+      'cerulean-deep':     { x: 0.48, y: 0.35 },
+      'tidal-drift':       { x: 0.55, y: 0.45 },
+      'ember-peak':        { x: 0.62, y: 0.40 },
+      'scorched-ascent':   { x: 0.68, y: 0.30 },
+      'voltspire':         { x: 0.75, y: 0.35 },
+      'circuit-way':       { x: 0.80, y: 0.45 },
+      'mindweave':         { x: 0.85, y: 0.40 },
+      'thought-garden':    { x: 0.88, y: 0.30 },
+      'frostfell':         { x: 0.90, y: 0.20 },
+      'glacier-pass':      { x: 0.85, y: 0.12 },
+      'drakemaw':          { x: 0.78, y: 0.15 },
+      'draconian-trail':   { x: 0.70, y: 0.10 },
+      'shadowmere':        { x: 0.60, y: 0.08 },
+    };
+    const locations = ALL_LOCATIONS.map((loc) => {
+      const pos = positions[loc.id] ?? { x: 0.5, y: 0.5 };
+      return {
+        id: loc.id, name: loc.name, x: pos.x, y: pos.y,
+        visited: this.visitedLocations.has(loc.id),
+        current: this.locationId === loc.id,
+      };
+    });
+    return { screen: 'regionmap' as const, locations, current: this.locationId };
+  }
+
+  /** Open shop: returns the shop view-model with buy/sell data. */
+  openShop(shopId?: string) {
+    return this.shopView(shopId);
+  }
+  private shopView(shopId?: string) {
+    const sid = shopId ?? this.shopId();
+    const shop = getShop(sid);
+    const mult = priceMultipliers(this.state.settings.difficultyMode);
+    const buy = availableStock(shop, this.state).map((e) => {
+      const def = getItem(e.itemId);
+      return { id: e.itemId, itemId: e.itemId, name: def.name, price: Math.ceil(def.buyPrice * mult.buy) };
+    });
+    const sell = Object.values(this.state.bag).flatMap((items) =>
+      Object.keys(items as Record<string, number>).map((id) => {
+        const def = getItem(id);
+        return { id, itemId: id, name: def.name, count: (items as Record<string, number>)[id], price: Math.floor(def.sellPrice * mult.sell) };
+      }));
+    return {
+      screen: 'shop' as const, name: shop.name, stock: buy, sellItems: sell, money: this.state.money,
+    };
+  }
+
+  /** Buy from shop, then return updated shop view (keeps player in shop screen). */
+  shopBuy(itemId: string, qty = 1) {
+    const { state, result } = buyItem(this.state, getShop(this.shopId()), itemId, qty);
+    this.state = state;
+    if (!result.ok) {
+      return { ...this.shopView(), message: `Can't buy: ${result.reason}.` };
+    }
+    return { ...this.shopView(), message: `Bought ${qty}\u00d7 ${getItem(itemId).name}.` };
+  }
+
+  /** Sell to shop, then return updated shop view. */
+  shopSell(itemId: string, qty = 1) {
+    const { state, result } = sellItem(this.state, itemId, qty);
+    this.state = state;
+    if (!result.ok) {
+      return { ...this.shopView(), message: `Can't sell: ${result.reason}.` };
+    }
+    return { ...this.shopView(), message: `Sold ${qty}\u00d7 ${getItem(itemId).name}.` };
+  }
+
+  /** Open options: returns a view that signals the client to show the options overlay. */
+  openOptions() { return { screen: 'options' as const }; }
+
+  /** Close auxiliary screens (client-driven; server just returns to overworld). */
+  closeOptions() { this.overlay = null; return this.view(); }
+  closeTrainerCard() { return this.view(); }
+  closePokedex() { return this.view(); }
+  closeShop() { this.overlay = null; return this.view(); }
+  closeRegionMap() { return this.view(); }
 }
 
 let singleton: GameSession | null = null;
@@ -582,6 +748,36 @@ export async function dispatch(cmd: string, body: any) {
     case 'sell': return singleton.sell(body.itemId, body.qty ?? 1);
     case 'save': return singleton.save(body.slot);
     case 'load': return singleton.load(body.slot);
+    case 'title': return singleton.title();
+    case 'newGame': {
+      const r = singleton.newGame();
+      if (r.__reset) { singleton = new GameSession(); return singleton.view(); }
+      return r;
+    }
+    case 'loadGame': {
+      const r = await singleton.loadGame();
+      if (r.__load) {
+        singleton = new GameSession();
+        singleton.state = validateAndRepair(deserialize(r.__load));
+        singleton.message = 'Game loaded.';
+        singleton.overlay = null;
+        singleton.battle = null;
+        return singleton.view();
+      }
+      return r;
+    }
+    case 'trainerCard': return singleton.trainerCard();
+    case 'pokedex': return singleton.pokedex();
+    case 'regionMap': return singleton.regionMap();
+    case 'openShop': return singleton.openShop(body.shopId);
+    case 'shopBuy': return singleton.shopBuy(body.itemId, body.qty ?? 1);
+    case 'shopSell': return singleton.shopSell(body.itemId, body.qty ?? 1);
+    case 'closeOptions': return singleton.closeOptions();
+    case 'closeTrainerCard': return singleton.closeTrainerCard();
+    case 'closePokedex': return singleton.closePokedex();
+    case 'closeShop': return singleton.closeShop();
+    case 'openOptions': return singleton.openOptions();
+    case 'closeRegionMap': return singleton.closeRegionMap();
     default: return { error: `unknown cmd ${cmd}` };
   }
 }

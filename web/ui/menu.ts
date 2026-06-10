@@ -2,6 +2,7 @@
 // Server-driven: the server sends `view.overlay`; this renders it and routes
 // button presses back as commands. No game logic lives here.
 import { renderSummary, renderBox, renderPokedex, renderVsSeeker } from './menu-screens';
+import { select as sfxSelect, confirm as sfxConfirm, cancel as sfxCancel } from '../audio/sfx';
 
 type Send = (cmd: string, body?: Record<string, unknown>) => void;
 
@@ -18,6 +19,15 @@ function el(tag: string, style: string, text?: string): HTMLElement {
 const BTN = 'pointer-events:auto;background:#3a5a8c;color:#fff;border:0;border-radius:8px;padding:10px 16px;cursor:pointer;font-size:15px;font-weight:600;box-shadow:0 2px 5px #0003';
 const BTN_ALT = BTN.replace('#3a5a8c', '#4a4a55');
 
+function inferCategory(id: string, name: string): string {
+  const lower = (id + ' ' + name).toLowerCase();
+  if (lower.includes('ball')) return 'Pok\u00e9 Balls';
+  if (lower.match(/potion|heal|revive|antidote|elixir|berry|energy|fresh|max|hyper|full|awake/)) return 'Healing';
+  if (lower.match(/xattack|xdefend|xspeed|guard|dire|xspatk|xspdef|xaccuracy|sharp|white.*powder|dire.*powder/)) return 'Battle Items';
+  if (lower.match(/key|card|ticket|pass|machine|tm|hm|mail/)) return 'Key Items';
+  return 'Other';
+}
+
 export class Menu {
   root: HTMLDivElement;
   private selected: number | null = null; // party-swap first selection
@@ -31,7 +41,21 @@ export class Menu {
 
   private button(label: string, onClick: () => void, style = BTN): HTMLElement {
     const b = el('button', style, label);
-    b.addEventListener('click', onClick);
+    b.addEventListener('mouseenter', () => { try { sfxSelect(); } catch { /* */ } });
+    b.addEventListener('click', () => {
+      try { sfxConfirm(); } catch { /* */ }
+      onClick();
+    });
+    return b;
+  }
+
+  private cancelButton(label: string, onClick: () => void, style = BTN_ALT): HTMLElement {
+    const b = el('button', style, label);
+    b.addEventListener('mouseenter', () => { try { sfxSelect(); } catch { /* */ } });
+    b.addEventListener('click', () => {
+      try { sfxCancel(); } catch { /* */ }
+      onClick();
+    });
     return b;
   }
 
@@ -83,7 +107,7 @@ export class Menu {
         body.appendChild(this.button('PC Box', () => this.send('menu', { which: 'box' })));
         body.appendChild(this.button('Vs-Seeker', () => this.send('menu', { which: 'vsseeker' })));
         body.appendChild(this.button('Save', () => this.send('menu', { which: 'save' })));
-        node = this.panel('Menu', body, [this.button('Close', () => this.send('closeMenu'), BTN_ALT)]);
+        node = this.panel('Menu', body, [this.cancelButton('Close', () => this.send('closeMenu'))]);
         break;
       }
       case 'center': {
@@ -105,29 +129,50 @@ export class Menu {
             else { const a = this.selected; this.selected = null; this.send('swapParty', { a, b: i }); }
           }, !useMode && this.reorder && this.selected === i));
         });
-        const footer = [this.button('Back', () => this.send('menu', { which: 'pause' }), BTN_ALT)];
+        const footer = [this.cancelButton('Back', () => this.send('menu', { which: 'pause' }))];
         if (!useMode) footer.unshift(this.button(this.reorder ? 'Done' : 'Reorder', () => { this.reorder = !this.reorder; this.selected = null; this.render(view); }));
         node = this.panel(useMode ? 'Use Item — choose target' : 'Party', body, footer);
         break;
       }
-      case 'summary': node = this.panel(`${o.mon.species} — Summary`, renderSummary(o, this.send), [this.button('Back', () => this.send('menu', { which: 'party' }), BTN_ALT)]); break;
-      case 'box': node = this.panel('PC Box', renderBox(o, this.send), [this.button('Back', () => this.send('menu', { which: 'pause' }), BTN_ALT)]); break;
-      case 'pokedex': node = this.panel('Pokédex', renderPokedex(o, this.send), [this.button('Back', () => this.send('menu', { which: 'pause' }), BTN_ALT)]); break;
-      case 'vsseeker': node = this.panel('Vs-Seeker', renderVsSeeker(o, this.send), [this.button('Back', () => this.send('menu', { which: 'pause' }), BTN_ALT)]); break;
+      case 'summary': node = this.panel(`${o.mon.species} — Summary`, renderSummary(o, this.send), [this.cancelButton('Back', () => this.send('menu', { which: 'party' }))]); break;
+      case 'box': node = this.panel('PC Box', renderBox(o, this.send), [this.cancelButton('Back', () => this.send('menu', { which: 'pause' }))]); break;
+      case 'pokedex': node = this.panel('Pokédex', renderPokedex(o, this.send), [this.cancelButton('Back', () => this.send('menu', { which: 'pause' }))]); break;
+      case 'vsseeker': node = this.panel('Vs-Seeker', renderVsSeeker(o, this.send), [this.cancelButton('Back', () => this.send('menu', { which: 'pause' }))]); break;
       case 'bag': {
         const body = el('div', 'min-width:300px');
-        if (!o.pockets.length) body.appendChild(el('div', 'color:#9fb3d1', 'Your bag is empty.'));
-        o.pockets.forEach((p: any) => {
-          body.appendChild(el('div', 'font-size:12px;text-transform:uppercase;color:#7f93b3;margin:8px 0 4px', p.pocket));
-          p.items.forEach((it: any) => {
-            const row = el('div', 'display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid #2a364c');
-            row.appendChild(el('span', 'font-size:14px', `${it.name} ×${it.count}`));
-            if (it.usable) row.appendChild(this.button('Use', () => this.send('useItem', { itemId: it.id }), BTN + ';padding:5px 12px;font-size:13px'));
-            else row.appendChild(el('span', 'font-size:12px;color:#6b7a93', 'battle only'));
-            body.appendChild(row);
+        if (!o.pockets.length) {
+          body.appendChild(el('div', 'color:#9fb3d1', 'Your bag is empty.'));
+        } else {
+          // Collect all items from all pockets
+          const allItems: any[] = [];
+          o.pockets.forEach((p: any) => {
+            p.items.forEach((it: any) => allItems.push(it));
           });
-        });
-        node = this.panel('Bag', body, [this.button('Back', () => this.send('menu', { which: 'pause' }), BTN_ALT)]);
+
+          // Group by inferred category
+          const groups: Record<string, any[]> = {};
+          for (const it of allItems) {
+            const cat = inferCategory(it.id ?? '', it.name ?? '');
+            if (!groups[cat]) groups[cat] = [];
+            groups[cat].push(it);
+          }
+
+          // Render grouped in defined order
+          const categoryOrder = ['Healing', 'Poké Balls', 'Battle Items', 'Key Items', 'Other'];
+          for (const cat of categoryOrder) {
+            const items = groups[cat];
+            if (!items || !items.length) continue;
+            body.appendChild(el('div', 'font-size:12px;font-weight:700;text-transform:uppercase;color:#7f93b3;margin:10px 0 4px;', cat));
+            items.forEach((it: any) => {
+              const row = el('div', 'display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid #2a364c');
+              row.appendChild(el('span', 'font-size:14px', `${it.name} ×${it.count}`));
+              if (it.usable) row.appendChild(this.button('Use', () => this.send('useItem', { itemId: it.id }), BTN + ';padding:5px 12px;font-size:13px'));
+              else row.appendChild(el('span', 'font-size:12px;color:#6b7a93', 'battle only'));
+              body.appendChild(row);
+            });
+          }
+        }
+        node = this.panel('Bag', body, [this.cancelButton('Back', () => this.send('menu', { which: 'pause' }))]);
         break;
       }
       case 'shop': {
@@ -149,7 +194,7 @@ export class Menu {
             body.appendChild(row);
           });
         }
-        node = this.panel(o.name ?? 'Shop', body, [this.button('Leave', () => this.send('closeMenu'), BTN_ALT)]);
+        node = this.panel(o.name ?? 'Shop', body, [this.cancelButton('Leave', () => this.send('closeMenu'))]);
         break;
       }
       case 'save': {
@@ -163,11 +208,11 @@ export class Menu {
           row.appendChild(btns);
           body.appendChild(row);
         });
-        node = this.panel('Save / Load', body, [this.button('Back', () => this.send('menu', { which: 'pause' }), BTN_ALT)]);
+        node = this.panel('Save / Load', body, [this.cancelButton('Back', () => this.send('menu', { which: 'pause' }))]);
         break;
       }
       default:
-        node = this.panel('Menu', el('div', '', String(o.kind)), [this.button('Close', () => this.send('closeMenu'), BTN_ALT)]);
+        node = this.panel('Menu', el('div', '', String(o.kind)), [this.cancelButton('Close', () => this.send('closeMenu'))]);
     }
 
     this.root.replaceChildren(node);

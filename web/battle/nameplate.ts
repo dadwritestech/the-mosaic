@@ -61,6 +61,10 @@ export class Nameplate {
   private _expFill: HTMLElement;
   private _expRow: HTMLElement;
 
+  /* --- HP number animation --- */
+  private _lastHpNum: number | undefined;
+  private _hpAnimFrame: number | null = null;
+
   constructor(side: 'self' | 'foe') {
     const root = document.createElement('div');
     root.style.cssText = [
@@ -272,12 +276,17 @@ export class Nameplate {
     this._hpFill.style.width = clampedHp + '%';
     this._hpFill.style.background = hpColor(clampedHp);
 
-    // HP numbers
+    // HP numbers (animated count-up/down)
     if (d.hp !== undefined && d.maxHp !== undefined) {
-      this._hpNumberSpan.textContent = `${d.hp}/${d.maxHp}`;
       this._hpNumberSpan.style.display = '';
+      this.animateHpNumber(d.hp, d.maxHp);
     } else {
       this._hpNumberSpan.style.display = 'none';
+      if (this._hpAnimFrame !== null) {
+        cancelAnimationFrame(this._hpAnimFrame);
+        this._hpAnimFrame = null;
+      }
+      this._lastHpNum = undefined;
     }
 
     // EXP bar
@@ -288,5 +297,31 @@ export class Nameplate {
     } else {
       this._expRow.style.display = 'none';
     }
+  }
+
+  private animateHpNumber(targetHp: number, maxHp: number): void {
+    const start = this._lastHpNum ?? targetHp;
+    const duration = 450;
+    const startTime = performance.now();
+
+    if (this._hpAnimFrame !== null) {
+      cancelAnimationFrame(this._hpAnimFrame);
+    }
+
+    const step = (now: number) => {
+      const elapsed = now - startTime;
+      const t = Math.min(1, elapsed / duration);
+      const current = Math.round(start + (targetHp - start) * t);
+      this._hpNumberSpan.textContent = `${Math.max(0, Math.min(maxHp, current))}/${maxHp}`;
+      if (t < 1) {
+        this._hpAnimFrame = requestAnimationFrame(step);
+      } else {
+        this._hpNumberSpan.textContent = `${Math.max(0, Math.min(maxHp, targetHp))}/${maxHp}`;
+        this._lastHpNum = targetHp;
+        this._hpAnimFrame = null;
+      }
+    };
+
+    this._hpAnimFrame = requestAnimationFrame(step);
   }
 }
