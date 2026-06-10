@@ -1,3 +1,6 @@
+import type { MapV2 } from './maps/mapv2';
+import { autotileQuads, quarterSrc } from './maps/autotile';
+
 // ── tileset lookup ──────────────────────────────────────────────
 const GRASS_GROUND: [number, number] = [0, 3];
 const TALL_GRASS: [number, number]   = [0, 6];
@@ -52,6 +55,11 @@ export class OverworldScreen2D {
   // grass rustle particles
   private rustles: RustleParticle[] = [];
   private lastRustleTile = '';
+
+  // MapV2 (Essentials-imported) rendering
+  private curTilesetName = '';
+  private mapTilesetImg: HTMLImageElement | null = null;
+  private autotileImgs: Record<string, HTMLImageElement> = {};
 
   private keyHandler: ((e: KeyboardEvent) => void) | null;
   private resizeHandler: (() => void) | null;
@@ -217,6 +225,9 @@ export class OverworldScreen2D {
     this.pvis.x += (targetX - this.pvis.x) * lerpFactor;
     this.pvis.y += (targetY - this.pvis.y) * lerpFactor;
 
+    // ── MapV2 (Essentials-imported) render path ─────────────────
+    if (v.mapV2) { this.renderMapV2(ctx, W, H, v.mapV2 as MapV2); return; }
+
     const tiles: any = v.tiles;
     if (!tiles || !tiles.length) return;
 
@@ -346,6 +357,77 @@ export class OverworldScreen2D {
       }
     }
   };
+
+  // ── MapV2: load this map's tileset + autotile images on demand ──
+  private ensureMapImages(map: MapV2): void {
+    if (this.curTilesetName === map.tileset && this.mapTilesetImg) return;
+    this.curTilesetName = map.tileset;
+    this.mapTilesetImg = this.loadImage(`/2d/tilesets/${map.tileset}.png`);
+    this.autotileImgs = {};
+    for (const name of map.autotiles) {
+      if (name) this.autotileImgs[name] = this.loadImage(`/2d/tilesets/${name}.png`);
+    }
+  }
+
+  // ── draw one RMXP tile id (plain tileset tile or 4-quarter autotile) ──
+  private drawTileId(ctx: CanvasRenderingContext2D, map: MapV2, id: number, dx: number, dy: number): void {
+    if (id <= 0) return;
+    const Q = TILE_SRC / 2;     // 16px source quarter
+    const DQ = CELL / 2;        // 24px dest quarter
+    if (id >= 384) {
+      const t = id - 384, sx = (t % 8) * TILE_SRC, sy = Math.floor(t / 8) * TILE_SRC;
+      if (this.mapTilesetImg?.complete) ctx.drawImage(this.mapTilesetImg, sx, sy, TILE_SRC, TILE_SRC, dx, dy, CELL, CELL);
+      return;
+    }
+    const slot = Math.floor(id / 48) - 1;
+    const sub = id % 48;
+    const img = this.autotileImgs[map.autotiles[slot]];
+    if (!img || !img.complete) return;
+    const quads = autotileQuads(sub);
+    const off = [[0, 0], [DQ, 0], [0, DQ], [DQ, DQ]];
+    for (let i = 0; i < 4; i++) {
+      const { sx, sy } = quarterSrc(quads[i]);
+      ctx.drawImage(img, sx, sy, Q, Q, dx + off[i][0], dy + off[i][1], DQ, DQ);
+    }
+  }
+
+  // ── MapV2 render: 3 layers (priority cells deferred over the player) ──
+  private renderMapV2(ctx: CanvasRenderingContext2D, W: number, H: number, map: MapV2): void {
+    this.ensureMapImages(map);
+
+    // camera ease (same as the legacy path)
+    const lerp = 0.18;
+    const psx = this.pvis.x * CELL + CELL / 2, psy = this.pvis.y * CELL + CELL / 2;
+    this.cam.x += (psx - W / 2 - this.cam.x) * lerp;
+    this.cam.y += (psy - H / 2 - this.cam.y) * lerp;
+
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillRect(0, 0, W, H);
+
+    const startTX = Math.floor(this.cam.x / CELL) - 1, startTY = Math.floor(this.cam.y / CELL) - 1;
+    const endTX = startTX + Math.ceil(W / CELL) + 2, endTY = startTY + Math.ceil(H / CELL) + 2;
+    const inb = (x: number, y: number) => x >= 0 && y >= 0 && x < map.width && y < map.height;
+
+    const deferred: [number, number][] = []; // priority cells -> draw after player
+    for (let ty = startTY; ty < endTY; ty++) {
+      for (let tx = startTX; tx < endTX; tx++) {
+        if (!inb(tx, ty)) continue;
+        const dx = tx * CELL - this.cam.x, dy = ty * CELL - this.cam.y;
+        if (map.priorities[ty][tx] > 0) { deferred.push([tx, ty]); }
+        for (let z = 0; z < 3; z++) {
+          if (map.priorities[ty][tx] > 0 && z === 2) continue; // top priority tile deferred
+          this.drawTileId(ctx, map, map.layers[z][ty][tx], dx, dy);
+        }
+      }
+    }
+
+    this.drawPlayer(ctx);
+
+    for (const [tx, ty] of deferred) {
+      const dx = tx * CELL - this.cam.x, dy = ty * CELL - this.cam.y;
+      this.drawTileId(ctx, map, map.layers[2][ty][tx], dx, dy);
+    }
+  }
 
   // ── ground tile type → [row, col] in tileset ──────────────────
   private groundTileType(tile: string): [number, number] {

@@ -31,6 +31,8 @@ import { makeRng } from '../src/ai/rng';
 import type { PokemonSet, Action, BallType } from '../src/bridge/types';
 import * as Sim from 'pokemon-showdown';
 import { SLICE_MAPS } from '../web/overworld/maps/slice';
+import { loadMapV2, walkableAt, warpAt, encounterAt, hasMapV2 } from '../web/overworld/maps/loader';
+import type { MapV2 } from '../web/overworld/maps/mapv2';
 import { tileAt, isWalkable, metaAt, type TileMap } from '../web/overworld/tilemap';
 
 interface BattleCtx {
@@ -83,10 +85,28 @@ class GameSession {
     this.visitedLocations.add(this.locationId);
   }
   private map(): TileMap { return SLICE_MAPS[this.locationId]; }
+  private mapV2: MapV2 | null = null; // set when the current location is an Essentials-imported map
   private dexNum(species: string): number { return (Sim.Dex as any).forGen(9).species.get(species).num; }
+
+  /** SPIKE (Task 9): jump to an imported MapV2 location to verify rendering. */
+  loadSample(id = 'sample') {
+    if (!hasMapV2(id)) { this.message = `no map ${id}`; return this.view(); }
+    this.mapV2 = loadMapV2(id);
+    this.locationId = id;
+    this.px = this.mapV2.spawn.x; this.py = this.mapV2.spawn.y;
+    return this.view();
+  }
 
   view() {
     if (this.battle) return this.battleView();
+    if (this.mapV2) {
+      return {
+        screen: 'overworld' as const, locationId: this.locationId, mapV2: this.mapV2,
+        player: { x: this.px, y: this.py }, time: timeOfDay(this.state),
+        party: this.state.party.map((p) => ({ species: p.species, level: p.level, hpPercent: Math.round((p.currentHp / maxHp(p)) * 100) })),
+        badges: this.state.badges, money: this.state.money, message: this.message, overlay: this.overlay,
+      };
+    }
     const m = this.map();
     return {
       screen: 'overworld' as const, locationId: this.locationId, tiles: m.tiles,
@@ -103,6 +123,25 @@ class GameSession {
     if (this.overlay) return this.view();          // movement is blocked while a menu is open
     const D = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[dir];
     const nx = this.px + D[0], ny = this.py + D[1];
+
+    // MapV2 (Essentials-imported) movement
+    if (this.mapV2) {
+      if (!walkableAt(this.mapV2, nx, ny)) return this.view();
+      this.px = nx; this.py = ny;
+      this.state = advanceStep(this.state);
+      const warp = warpAt(this.mapV2, nx, ny);
+      if (warp && hasMapV2(warp.toMap)) {
+        this.mapV2 = loadMapV2(warp.toMap); this.locationId = warp.toMap;
+        this.px = warp.toX; this.py = warp.toY; this.visitedLocations.add(this.locationId);
+        return this.view();
+      }
+      if (encounterAt(this.mapV2, nx, ny)) {
+        const loc = getLocation(this.locationId);
+        if (loc?.encounters) { const enc = rollEncounter(loc.encounters, timeOfDay(this.state), makeRng(Date.now())); if (enc) return this.startWild(enc.species, enc.level); }
+      }
+      return this.view();
+    }
+
     const m = this.map();
     if (!isWalkable(m, nx, ny)) return this.view();
     this.px = nx; this.py = ny;
@@ -754,6 +793,7 @@ export async function dispatch(cmd: string, body: any) {
   switch (cmd) {
     case 'view': return singleton.view();
     case 'move': return singleton.move(body.dir);
+    case 'loadSample': return singleton.loadSample(body.id);
     case 'turn': return singleton.turn(body.index);
     case 'switchMon': return singleton.switchMon(body.index);
     case 'catch': return singleton.catch(body.ball ?? 'poke');
