@@ -1,4 +1,9 @@
+import type { Biome } from '../content/types';
+
 export interface Stats6 { hp: number; atk: number; def: number; spa: number; spd: number; spe: number; }
+
+export type RiftStatus = 'unsealed' | 'sealed' | 'attuned';
+export interface RiftState { status: RiftStatus; biome?: Biome; }
 
 export interface OwnedMove { id: string; pp: number; ppUps: number; }
 
@@ -33,4 +38,5 @@ export interface GameState {
   time: { day: number; minutes: number };
   trainerLog: Record<string, { defeats: number; lastDefeatedDay: number; readyDay: number }>;
   stabilizeMeter: number;
+  riftStates: Record<string, RiftState>;
 }

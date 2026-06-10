@@ -1,6 +1,6 @@
 import type { GameState } from './types';
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 export function serialize(state: GameState): string {
   return JSON.stringify({
@@ -14,6 +14,7 @@ export function deserialize(json: string): GameState {
   const raw = JSON.parse(json);
   return {
     ...raw,
+    riftStates: raw.riftStates ?? {},
     pokedex: { seen: new Set<number>(raw.pokedex.seen), caught: new Set<number>(raw.pokedex.caught) },
   } as GameState;
 }

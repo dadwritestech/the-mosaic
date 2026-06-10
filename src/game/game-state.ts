@@ -12,6 +12,7 @@ export function createNewGame(settings: GameSettings): GameState {
     flags: {}, graveyard: [], time: { day: 0, minutes: 0 },
     trainerLog: {},
     stabilizeMeter: 0,
+    riftStates: {},
   };
 }
 
