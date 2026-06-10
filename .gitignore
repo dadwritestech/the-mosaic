@@ -13,3 +13,7 @@ t*-*.png
 web/public/models3d/
 sprites-master/
 *.zip
+
+# Essentials import working dirs
+.essentials/
+web/public/2d/tilesets/

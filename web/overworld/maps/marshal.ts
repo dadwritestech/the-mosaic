@@ -15,8 +15,11 @@ export function readMarshal(buf: Uint8Array): MarshalValue {
 class Reader {
   pos = 0;
   symbols: string[] = [];
+  objects: MarshalValue[] = []; // Ruby link table (everything except nil/bool/fixnum/symbol)
   constructor(public b: Uint8Array) {}
   u8(): number { return this.b[this.pos++]; }
+
+  reg<T extends MarshalValue>(v: T): T { this.objects.push(v); return v; }
 
   /** Ruby Marshal compact integer ("long"). */
   long(): number {
@@ -49,10 +52,20 @@ class Reader {
       case 0x69: return this.long(); // 'i'
       case 0x3a: return this.symbol();   // ':'
       case 0x3b: return this.symlink();  // ';'
-      case 0x22: return this.rawString();// '"' bare string
+      case 0x40: return this.objects[this.long()]; // '@' object link
+      case 0x22: return this.reg(this.rawString());// '"' bare string
+      case 0x66: return this.reg(parseFloat(this.rawString())); // 'f' float
       case 0x49: { const s = this.value(); this.skipIvars(); return s; } // 'I' ivar-wrapped
-      case 0x5b: { const n = this.long(); const a: MarshalValue[] = []; for (let i = 0; i < n; i++) a.push(this.value()); return a; } // '['
-      case 0x7b: { const n = this.long(); const h: Record<string, MarshalValue> = {}; for (let i = 0; i < n; i++) { const k = this.value(); h[this.keyStr(k)] = this.value(); } return h; } // '{'
+      case 0x5b: { // '['
+        const n = this.long(); const a: MarshalValue[] = []; this.reg(a);
+        for (let i = 0; i < n; i++) a.push(this.value());
+        return a;
+      }
+      case 0x7b: { // '{'
+        const n = this.long(); const h: Record<string, MarshalValue> = {}; this.reg(h);
+        for (let i = 0; i < n; i++) { const k = this.value(); h[this.keyStr(k)] = this.value(); }
+        return h;
+      }
       case 0x6f: return this.object();   // 'o'
       case 0x75: return this.userdef();  // 'u'
       default: throw new Error('unhandled marshal tag 0x' + t.toString(16) + ' @' + (this.pos - 1));
@@ -69,16 +82,17 @@ class Reader {
 
   object(): MarshalValue {
     const cls = this.symOrLink();
+    const shell: { __class: string; ivars: Record<string, MarshalValue> } = { __class: cls, ivars: {} };
+    this.reg(shell); // register before reading ivars (Ruby order — supports back-references)
     const n = this.long();
-    const ivars: Record<string, MarshalValue> = {};
-    for (let i = 0; i < n; i++) { const key = this.symOrLink(); ivars[key] = this.value(); }
-    return { __class: cls, ivars };
+    for (let i = 0; i < n; i++) { const key = this.symOrLink(); shell.ivars[key] = this.value(); }
+    return shell;
   }
 
   userdef(): MarshalValue {
     const cls = this.symOrLink();
     const len = this.long();
-    return { __userClass: cls, data: this.bytes(len).slice() };
+    return this.reg({ __userClass: cls, data: this.bytes(len).slice() });
   }
 
   symOrLink(): string {
