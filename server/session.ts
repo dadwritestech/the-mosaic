@@ -85,23 +85,32 @@ class GameSession {
     this.visitedLocations.add(this.locationId);
   }
   private map(): TileMap { return SLICE_MAPS[this.locationId]; }
-  private mapV2: MapV2 | null = null; // set when the current location is an Essentials-imported map
+  /** The current location's imported map, or null if it's a legacy TileMap location. */
+  private curMapV2(): MapV2 | null { return hasMapV2(this.locationId) ? loadMapV2(this.locationId) : null; }
   private dexNum(species: string): number { return (Sim.Dex as any).forGen(9).species.get(species).num; }
 
-  /** SPIKE (Task 9): jump to an imported MapV2 location to verify rendering. */
-  loadSample(id = 'sample') {
-    if (!hasMapV2(id)) { this.message = `no map ${id}`; return this.view(); }
-    this.mapV2 = loadMapV2(id);
+  /** Move into a location, placing the player at its spawn (works for either map type). */
+  private enterLocation(id: string) {
     this.locationId = id;
-    this.px = this.mapV2.spawn.x; this.py = this.mapV2.spawn.y;
+    this.visitedLocations.add(id);
+    const mv = this.curMapV2();
+    if (mv) { this.px = mv.spawn.x; this.py = mv.spawn.y; }
+    else { const m = this.map(); this.px = m.spawn.x; this.py = m.spawn.y; }
+  }
+
+  /** Debug: jump straight to any location (imported map or legacy). */
+  loadSample(id = 'sample') {
+    if (!hasMapV2(id) && !SLICE_MAPS[id]) { this.message = `no map ${id}`; return this.view(); }
+    this.enterLocation(id);
     return this.view();
   }
 
   view() {
     if (this.battle) return this.battleView();
-    if (this.mapV2) {
+    const mv = this.curMapV2();
+    if (mv) {
       return {
-        screen: 'overworld' as const, locationId: this.locationId, mapV2: this.mapV2,
+        screen: 'overworld' as const, locationId: this.locationId, mapV2: mv,
         player: { x: this.px, y: this.py }, time: timeOfDay(this.state),
         party: this.state.party.map((p) => ({ species: p.species, level: p.level, hpPercent: Math.round((p.currentHp / maxHp(p)) * 100) })),
         badges: this.state.badges, money: this.state.money, message: this.message, overlay: this.overlay,
@@ -125,18 +134,19 @@ class GameSession {
     const nx = this.px + D[0], ny = this.py + D[1];
 
     // MapV2 (Essentials-imported) movement
-    if (this.mapV2) {
-      const warp = warpAt(this.mapV2, nx, ny);
+    const mv = this.curMapV2();
+    if (mv) {
+      const warp = warpAt(mv, nx, ny);
       // warp tiles (door/exit mats) are always steppable even if the tileset marks them solid
-      if (!warp && !walkableAt(this.mapV2, nx, ny)) return this.view();
+      if (!warp && !walkableAt(mv, nx, ny)) return this.view();
       this.px = nx; this.py = ny;
       this.state = advanceStep(this.state);
-      if (warp && hasMapV2(warp.toMap)) {
-        this.mapV2 = loadMapV2(warp.toMap); this.locationId = warp.toMap;
-        this.px = warp.toX; this.py = warp.toY; this.visitedLocations.add(this.locationId);
+      if (warp && (hasMapV2(warp.toMap) || SLICE_MAPS[warp.toMap])) {
+        this.locationId = warp.toMap; this.visitedLocations.add(this.locationId);
+        this.px = warp.toX; this.py = warp.toY;
         return this.view();
       }
-      if (encounterAt(this.mapV2, nx, ny)) {
+      if (encounterAt(mv, nx, ny)) {
         const loc = getLocation(this.locationId);
         if (loc?.encounters) { const enc = rollEncounter(loc.encounters, timeOfDay(this.state), makeRng(Date.now())); if (enc) return this.startWild(enc.species, enc.level); }
       }
@@ -148,7 +158,7 @@ class GameSession {
     this.px = nx; this.py = ny;
     this.state = advanceStep(this.state);
     const meta = metaAt(m, nx, ny);
-    if (meta.exitTo) { this.locationId = meta.exitTo; this.visitedLocations.add(this.locationId); const nm = this.map(); this.px = nm.spawn.x; this.py = nm.spawn.y; return this.view(); }
+    if (meta.exitTo) { this.enterLocation(meta.exitTo); return this.view(); }
     if (meta.npcId) { this.message = 'Aethel: The Core remembers every trainer who walked here.'; return this.view(); }
     if (meta.gymId) return this.startGym(meta.gymId);
     const t = tileAt(m, nx, ny);
