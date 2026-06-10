@@ -1,6 +1,7 @@
 // web/screens/shop.ts — two-column buy/sell shop UI.
 
 import { select as sfxSelect, confirm as sfxConfirm, cancel as sfxCancel } from '../audio/sfx';
+import { showToast } from '../ui/toast';
 
 /* ------------------------------------------------------------------ */
 /*  DOM helpers                                                        */
@@ -20,6 +21,7 @@ function el(tag: string, css?: string, text?: string): HTMLElement {
 export class ShopScreen {
   private container: HTMLElement;
   private disposed = false;
+  private lastToastMessage = '';
 
   constructor(
     host: HTMLElement,
@@ -44,6 +46,15 @@ export class ShopScreen {
     const sellItems = view.sellItems ?? [];
     const money = view.money ?? 0;
     const message = view.message ?? '';
+
+    /* ---- toast on shop message (only when it changes) ---- */
+    if (message && message !== this.lastToastMessage) {
+      try {
+        this.lastToastMessage = message;
+        const kind = /not enough|can't|cannot|fail/i.test(message) ? 'bad' : 'good';
+        showToast(this.container, message, kind);
+      } catch { /* toast must never break rendering */ }
+    }
 
     /* ---- backdrop ---- */
     const backdrop = el('div',

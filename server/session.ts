@@ -103,7 +103,7 @@ class GameSession {
     if (meta.gymId) return this.startGym(meta.gymId);
     const t = tileAt(m, nx, ny);
     if (t === 'center') { this.state = healParty(this.state); this.overlay = { kind: 'center', message: 'Welcome! Your Pokémon are now fully rested and healed.' }; return this.view(); }
-    if (t === 'shop') { this.overlay = this.shopOverlay(); return this.view(); }
+    if (t === 'shop') { return this.openShop(); }
     if (t === 'grass') {
       const loc = getLocation(this.locationId);
       if (loc.encounters) { const enc = rollEncounter(loc.encounters, timeOfDay(this.state), makeRng(Date.now())); if (enc) return this.startWild(enc.species, enc.level); }
@@ -120,7 +120,7 @@ class GameSession {
       case 'party':  this.overlay = this.partyOverlay(); break;
       case 'bag':    this.overlay = this.bagOverlay(); break;
       case 'save':   this.overlay = { kind: 'save', slots: ['slot1', 'slot2', 'slot3'] }; break;
-      case 'shop':   this.overlay = this.shopOverlay(); break;
+      case 'shop':   return this.openShop();
       case 'pokedex': this.overlay = this.pokedexOverlay(); break;
       case 'box':    this.overlay = this.boxOverlay(); break;
       case 'vsseeker': this.overlay = this.vsSeekerOverlay(); break;

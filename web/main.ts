@@ -13,6 +13,7 @@ const root = document.getElementById('game')!;
 
 let battle: BattleScreenV2 | null = null;
 let busy = false;
+let lastBaseView: any = null;  // remembers the screen behind Options overlay
 
 /* ---- lazy-constructed meta-screens ---- */
 let titleScreen: TitleScreen | null = null;
@@ -24,6 +25,13 @@ let regionMapScreen: RegionMapScreen | null = null;
 
 async function send(cmd: string, body: Record<string, unknown> = {}) {
   if (busy) return;
+  // Intercept options commands — pure client-side, no server round-trip.
+  if (cmd === 'openOptions') { render({ screen: 'options' }); return; }
+  if (cmd === 'closeOptions') {
+    if (lastBaseView) render(lastBaseView);
+    else send('view');
+    return;
+  }
   busy = true;
   try { render(await api(cmd, body)); } finally { busy = false; }
 }
@@ -60,6 +68,17 @@ function hideMetaScreens(): void {
 }
 
 function render(view: any) {
+  /* Remember the base view so closeOptions can return to it. */
+  if (view.screen !== 'options') { lastBaseView = view; }
+
+  /* ---- options screen (overlay, keep previous screen visible behind) ---- */
+  if (view.screen === 'options') {
+    if (!optionsScreen) optionsScreen = new OptionsScreen(root, (cmd, body) => send(cmd, body ?? {}));
+    optionsScreen.show();
+    optionsScreen.render(view);
+    return;
+  }
+
   /* Any screen transition first tears down open meta-overlays; the
      branch below re-shows whichever one (if any) this view wants. */
   hideMetaScreens();
@@ -70,14 +89,6 @@ function render(view: any) {
     if (!titleScreen) titleScreen = new TitleScreen(root, (cmd, body) => send(cmd, body ?? {}));
     titleScreen.show();
     titleScreen.render(view);
-    return;
-  }
-
-  /* ---- options screen (overlay, keep previous screen visible behind) ---- */
-  if (view.screen === 'options') {
-    if (!optionsScreen) optionsScreen = new OptionsScreen(root, (cmd, body) => send(cmd, body ?? {}));
-    optionsScreen.show();
-    optionsScreen.render(view);
     return;
   }
 
@@ -129,4 +140,4 @@ function render(view: any) {
   void battle.render(view);
 }
 
-render(await api('view'));
+render(await api('title'));
