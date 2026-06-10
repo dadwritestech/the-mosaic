@@ -49,3 +49,27 @@ export function toRpgMap(obj: MarshalValue): RpgMap {
   }));
   return { width, height, tilesetId, data, events };
 }
+
+export interface RpgTileset {
+  tilesetName: string;
+  autotileNames: string[];
+  passable(id: number): boolean;
+  priority(id: number): number;
+  terrainTag(id: number): number;
+}
+
+export function toTilesets(arr: MarshalValue[]): (RpgTileset | null)[] {
+  return arr.map((ts) => {
+    if (!ts) return null;
+    const pass = decodeTable(iv(ts, '@passages')).cells;
+    const prio = decodeTable(iv(ts, '@priorities')).cells;
+    const terr = decodeTable(iv(ts, '@terrain_tags')).cells;
+    return {
+      tilesetName: iv(ts, '@tileset_name') as string,
+      autotileNames: (iv(ts, '@autotile_names') as string[]) ?? [],
+      passable: (id) => ((pass[id] ?? 0) & 0x0f) !== 0x0f,
+      priority: (id) => prio[id] ?? 0,
+      terrainTag: (id) => terr[id] ?? 0,
+    };
+  });
+}

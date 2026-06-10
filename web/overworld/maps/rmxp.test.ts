@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { decodeTable, toRpgMap } from './rmxp';
+import { decodeTable, toRpgMap, toTilesets } from './rmxp';
+
+function table1d(cells: number[]) {
+  const head = new Int32Array([1, cells.length, 1, 1, cells.length]);
+  const body = new Int16Array(cells);
+  const out = new Uint8Array(head.byteLength + body.byteLength);
+  out.set(new Uint8Array(head.buffer), 0);
+  out.set(new Uint8Array(body.buffer), head.byteLength);
+  return { __userClass: 'Table', data: out };
+}
 
 function tableBlob(xs: number, ys: number, zs: number, cells: number[]): Uint8Array {
   const head = new Int32Array([3, xs, ys, zs, cells.length]);
@@ -42,5 +51,23 @@ describe('toRpgMap', () => {
     expect(m.tilesetId).toBe(7);
     expect(m.data.at(0, 0, 0)).toBe(384);
     expect(m.data.at(1, 0, 0)).toBe(385);
+  });
+});
+
+describe('toTilesets', () => {
+  it('reads name, autotiles, passages, terrain tags by id', () => {
+    const ts = { __class: 'RPG::Tileset', ivars: {
+      '@tileset_name': 'Outside', '@autotile_names': ['Grass','','','','','',''],
+      '@passages': table1d([0x0f, 0x00, 0x00]),     // id0 blocked, id1/2 passable
+      '@priorities': table1d([0, 0, 1]),
+      '@terrain_tags': table1d([0, 2, 0]),          // id1 terrain tag 2
+    }};
+    const out = toTilesets([null, ts]);
+    expect(out[1]!.tilesetName).toBe('Outside');
+    expect(out[1]!.autotileNames[0]).toBe('Grass');
+    expect(out[1]!.passable(0)).toBe(false);
+    expect(out[1]!.passable(1)).toBe(true);
+    expect(out[1]!.priority(2)).toBe(1);
+    expect(out[1]!.terrainTag(1)).toBe(2);
   });
 });
