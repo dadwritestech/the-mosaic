@@ -126,10 +126,11 @@ class GameSession {
 
     // MapV2 (Essentials-imported) movement
     if (this.mapV2) {
-      if (!walkableAt(this.mapV2, nx, ny)) return this.view();
+      const warp = warpAt(this.mapV2, nx, ny);
+      // warp tiles (door/exit mats) are always steppable even if the tileset marks them solid
+      if (!warp && !walkableAt(this.mapV2, nx, ny)) return this.view();
       this.px = nx; this.py = ny;
       this.state = advanceStep(this.state);
-      const warp = warpAt(this.mapV2, nx, ny);
       if (warp && hasMapV2(warp.toMap)) {
         this.mapV2 = loadMapV2(warp.toMap); this.locationId = warp.toMap;
         this.px = warp.toX; this.py = warp.toY; this.visitedLocations.add(this.locationId);

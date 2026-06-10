@@ -36,7 +36,8 @@ export function run(manifest: Record<string, Entry>): void {
   }
 }
 
-// Direct run: a smoke conversion (the real Arc-1 manifest is filled in Task 11).
+// Direct run converts the Arc-1 manifest.
 if (process.argv[1]?.replace(/\\/g, '/').endsWith('tools/essentials-import/run.ts')) {
-  run({ sample: { mapNo: 3, spawn: { x: 5, y: 5 } } });
+  // dynamic import keeps the manifest out of the library surface
+  import('./arc1-manifest').then(({ ARC1_MANIFEST }) => run(ARC1_MANIFEST));
 }
