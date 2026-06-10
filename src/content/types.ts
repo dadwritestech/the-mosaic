@@ -28,3 +28,25 @@ export interface Location {
   shopId?: string;
   gymId?: string;
 }
+
+/** A rift Warden — a boss trainer with a signature convergence tactic. */
+export interface WardenDef extends TrainerDef {
+  /** Tag the team-builder / AI reads to shape this Warden's strategy. */
+  signatureTactic: string;
+}
+
+/** A convergence rift: a seam where two worlds bleed together. Replaces GymDef. */
+export interface RiftDef {
+  id: string;
+  name: string;
+  biomeA: Biome;            // sealing may collapse the seam to this region...
+  biomeB: Biome;            // ...or this one, depending on the team's gen lean
+  levelBand: { min: number; max: number };
+  warden: WardenDef;
+  /** Seam mix — used while unsealed, and at raised level/rarity while attuned. */
+  fusedEncounters: EncounterTable;
+  /** Pure-region table if the seal collapses to biomeA. */
+  pureEncountersA: EncounterTable;
+  /** Pure-region table if the seal collapses to biomeB. */
+  pureEncountersB: EncounterTable;
+}
