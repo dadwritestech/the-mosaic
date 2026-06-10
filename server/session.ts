@@ -40,7 +40,17 @@ interface BattleCtx {
   activeIdx: number;              // which party slot is currently on the field (p1)
   participants: Set<string>;      // uids that were ever active — for exp distribution
   wildMon?: OwnedPokemon;         // the catchable wild Pokémon (added to team if caught)
-  ended?: { result: 'win' | 'loss' | 'caught' | 'run'; message: string; lines: string[] }; // result is staged; the screen waits for "Continue"
+  ended?: {
+    result: 'win' | 'loss' | 'caught' | 'run';
+    message: string;
+    lines: string[];
+    rewards?: {
+      money: number;
+      exp: { species: string; amount: number }[];
+      levelUps: { species: string; level: number; evolutionInto: string | null }[];
+      items: string[];
+    };
+  }; // result is staged; the screen waits for "Continue"
 }
 
 const BALL_ITEM: Record<string, string> = { poke: 'pokeball', great: 'greatball', ultra: 'ultraball', master: 'masterball' };
@@ -522,6 +532,7 @@ class GameSession {
       status: fc[i]?.status ?? (p.status ?? ''),
     }));
     let msg = '';
+    let rewards: BattleCtx['ended']['rewards'] | undefined;
     if (catchResult === 'caught') {
       this.writeBackParty(finalConditions);                       // your mon kept its battle damage
       if (b.wildMon) {                                            // actually add the caught Pokémon
@@ -538,6 +549,20 @@ class GameSession {
         rng: makeRng(1),
       });
       this.state = out.state;
+      const party = out.state.party;
+      const nameOf = (uid: string) => party.find((p) => p.uid === uid)?.species ?? '?';
+      rewards = {
+        money: out.summary.money,
+        exp: [...out.summary.expGained.entries()]
+          .filter(([, amt]) => amt > 0)
+          .map(([uid, amt]) => ({ species: nameOf(uid), amount: amt })),
+        levelUps: out.summary.levelUps.map((l) => ({
+          species: nameOf(l.uid),
+          level: party.find((p) => p.uid === l.uid)?.level ?? 0,
+          evolutionInto: l.evolutionInto,
+        })),
+        items: out.summary.items.map((id) => getItem(id).name),
+      };
       if (b.gymId) { const gym = getGym(b.gymId); this.trainerGym[gym.trainer.id] = b.gymId; this.state = recordTrainerDefeat(grantBadge(this.state, gym.badgeId), gym.trainer.id); msg = `You earned the ${gym.badgeId} badge!`; }
       else msg = `You won! +${out.summary.money}₽`;
     } else {
@@ -547,7 +572,7 @@ class GameSession {
     // Stage the result on the battle screen — DON'T drop to the overworld yet.
     // The player taps "Continue" (battleContinue) to dismiss it.
     const result = catchResult === 'caught' ? 'caught' : (b.bridge.state.winner === 'p1' ? 'win' : 'loss');
-    b.ended = { result, message: msg, lines: [b.log, msg].filter(Boolean) };
+    b.ended = { result, message: msg, lines: [b.log, msg].filter(Boolean), rewards };
     return this.battleView();
   }
 

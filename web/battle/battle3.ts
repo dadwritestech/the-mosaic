@@ -527,6 +527,21 @@ export class BattleScreenV2 {
     const wrap = el('div', 'display:flex;flex-direction:column;align-items:center;gap:10px;padding:4px 0;');
     const lines = (ended.lines ?? [ended.message]) as string[];
     for (const ln of lines) append(wrap, el('div', `font-size:15px;font-weight:700;color:${colors[ended.result] ?? '#fff'};text-align:center;`, ln));
+    // Reward lines (EXP, level-ups, evolution, items)
+    if (ended.rewards) {
+      const rw = el('div', 'display:flex;flex-direction:column;align-items:center;gap:4px;margin-top:6px;');
+      for (const e of (ended.rewards.exp ?? [])) {
+        if (e.amount > 0) append(rw, el('div', 'font-size:13px;color:#cbd5e1;text-align:center;', `${e.species} gained ${e.amount} EXP!`));
+      }
+      for (const lu of (ended.rewards.levelUps ?? [])) {
+        append(rw, el('div', 'font-size:13px;color:#f0b840;text-align:center;', `${lu.species} grew to Lv.${lu.level}!`));
+        if (lu.evolutionInto) append(rw, el('div', 'font-size:13px;color:#46d160;text-align:center;font-weight:600;', `${lu.species} evolved into ${lu.evolutionInto}!`));
+      }
+      for (const name of (ended.rewards.items ?? [])) {
+        append(rw, el('div', 'font-size:13px;color:#9fd0ff;text-align:center;', `Found ${name}!`));
+      }
+      append(wrap, rw);
+    }
     const cont = el('button', 'pointer-events:auto;padding:10px 30px;border-radius:10px;border:0;background:#3b82f6;color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;');
     cont.textContent = 'Continue ▶';
     cont.addEventListener('click', () => this.onAction('battleContinue'));
