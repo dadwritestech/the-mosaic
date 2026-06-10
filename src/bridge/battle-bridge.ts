@@ -154,6 +154,19 @@ export class BattleBridge {
     return result;
   }
 
+  /** Heal/cure the currently-active mon mid-battle (for in-battle item use).
+   *  hpPercent is the new HP percent; clearStatus also removes its status. */
+  setActiveHp(side: Side, hpPercent: number, clearStatus = false): void {
+    const st = this._state.active[side];
+    if (st) { st.hpPercent = hpPercent; if (clearStatus) st.status = ''; }
+    const battle: any = (this.stream as any).battle;
+    const mon = battle?.sides?.[side === 'p1' ? 0 : 1]?.active?.[0];
+    if (mon) {
+      mon.sethp(Math.max(1, Math.round((hpPercent / 100) * mon.maxhp)));
+      if (clearStatus && typeof mon.clearStatus === 'function') mon.clearStatus();
+    }
+  }
+
   private injectConditions(conds?: { p1?: import('./types').MonCondition[]; p2?: import('./types').MonCondition[] }): void {
     if (!conds) return;
     const battle = (this.stream as any).battle;

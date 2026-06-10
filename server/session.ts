@@ -128,7 +128,7 @@ class GameSession {
 
   private monList() {
     return this.state.party.map((p) => ({
-      uid: p.uid, species: p.species, level: p.level,
+      uid: p.uid, species: p.species, num: this.dexNum(p.species), level: p.level,
       hp: p.currentHp, maxHp: maxHp(p), hpPercent: Math.round((p.currentHp / maxHp(p)) * 100),
       status: p.status ?? '',
     }));
@@ -184,7 +184,7 @@ class GameSession {
     let heldItem = '';
     if (mon.heldItem) { try { heldItem = getItem(mon.heldItem).name; } catch { heldItem = mon.heldItem; } }
     return {
-      species: mon.species, level: mon.level, gender: mon.gender ?? 'N',
+      species: mon.species, num: this.dexNum(mon.species), level: mon.level, gender: mon.gender ?? 'N',
       types: dex.species.get(mon.species).types as string[],
       ability: mon.ability, nature: mon.nature, heldItem,
       hp: mon.currentHp, maxHp: stats.hp, hpPercent: Math.round((mon.currentHp / stats.hp) * 100), status: mon.status ?? '',
@@ -205,8 +205,8 @@ class GameSession {
     const box = this.state.boxes[this.boxIndex];
     return {
       kind: 'box', boxIndex: this.boxIndex, boxName: `Box ${this.boxIndex + 1}`, boxCount: this.state.boxes.length,
-      party: this.monList().map((m) => ({ uid: m.uid, species: m.species, level: m.level, hpPercent: m.hpPercent, status: m.status })),
-      slots: box.slots.map((m) => (m ? { uid: m.uid, species: m.species, level: m.level } : null)),
+      party: this.monList().map((m) => ({ uid: m.uid, species: m.species, num: m.num, level: m.level, hpPercent: m.hpPercent, status: m.status })),
+      slots: box.slots.map((m) => (m ? { uid: m.uid, species: m.species, num: this.dexNum(m.species), level: m.level } : null)),
     };
   }
   boxNav(delta: number) { this.boxIndex += delta; this.overlay = this.boxOverlay(); return this.view(); }
@@ -315,30 +315,82 @@ class GameSession {
     return this.state.party.map((p) => ({ hpPercent: Math.round((p.currentHp / maxHp(p)) * 100), status: p.status ?? '' }));
   }
 
+  // Type-effectiveness multiplier of an attacking type vs a set of defending types.
+  // Returns 0 / 0.25 / 0.5 / 1 / 2 / 4, or null for non-damaging moves.
+  private typeEff(moveType: string, defTypes: string[]): number {
+    const dex = (Sim.Dex as any).forGen(9);
+    let eff = 0;
+    for (const dt of defTypes) {
+      if (!dex.getImmunity(moveType, dt)) return 0;
+      eff += dex.getEffectiveness(moveType, dt);
+    }
+    return Math.pow(2, eff);
+  }
+
   private battleView() {
     const b = this.battle!; const s = b.bridge.state; const c = b.bridge.getChoices('p1');
-    const sideView = (m: any) => ({ species: m.species, num: this.dexNum(m.species), hpPercent: m.hpPercent, status: m.status, boosts: m.boosts ?? {}, volatiles: m.volatiles ?? [] });
-    // Bench Pokémon you can switch to (every party slot except the active one).
+    const dex = (Sim.Dex as any).forGen(9);
+    const active = this.activeMon();
+    const a1 = s.active.p1, a2 = s.active.p2;
+    const foeSp = dex.species.get(a2.species);
+
+    // Rich SELF view (your active mon — full stats/types/ability/item).
+    let abilityDesc = ''; try { abilityDesc = dex.abilities.get(active.ability).shortDesc ?? ''; } catch { /* */ }
+    let heldItem = '', itemDesc = '';
+    if (active.heldItem) { try { const it = getItem(active.heldItem); heldItem = it.name; } catch { heldItem = active.heldItem; } }
+    const self = {
+      species: a1.species, num: this.dexNum(a1.species), level: active.level, gender: active.gender ?? 'N',
+      // hp derives from the LIVE battle percent (persisted party HP only updates at battle end)
+      hpPercent: a1.hpPercent, hp: Math.max(0, Math.round((a1.hpPercent / 100) * maxHp(active))), maxHp: maxHp(active),
+      status: a1.status, boosts: a1.boosts ?? {}, volatiles: a1.volatiles ?? [],
+      types: dex.species.get(a1.species).types as string[], ability: active.ability, abilityDesc,
+      nature: active.nature, heldItem, itemDesc, stats: computeStats(active),
+    };
+    // Lighter FOE view (species/types/level + battle state).
+    const foeSet = b.oppTeam.find((st) => dex.species.get(st.species).name === foeSp.name);
+    const foe = {
+      species: a2.species, num: this.dexNum(a2.species), hpPercent: a2.hpPercent,
+      status: a2.status, boosts: a2.boosts ?? {}, volatiles: a2.volatiles ?? [],
+      types: foeSp.types as string[], level: foeSet?.level ?? active.level,
+    };
+
     const switches = this.state.party
-      .map((p, i) => ({ index: i + 1, species: p.species, level: p.level, hpPercent: Math.round((p.currentHp / maxHp(p)) * 100), status: p.status ?? '', fainted: p.currentHp <= 0 }))
+      .map((p, i) => ({ index: i + 1, species: p.species, num: this.dexNum(p.species), level: p.level, hpPercent: Math.round((p.currentHp / maxHp(p)) * 100), status: p.status ?? '', fainted: p.currentHp <= 0 }))
       .filter((_, i) => i !== b.activeIdx);
-    // Balls you actually own (so catching consumes real inventory).
     const balls = Object.entries(BALL_ITEM)
       .map(([ballType, itemId]) => ({ ballType, name: getItem(itemId).name, count: this.state.bag.balls?.[itemId] ?? 0 }))
       .filter((x) => x.count > 0);
     return {
       screen: 'battle' as const, isWild: b.isWild,
-      self: { ...sideView(s.active.p1), level: this.activeMon().level, heldItem: this.activeMon().heldItem ?? '' },
-      foe: { ...sideView(s.active.p2) },
+      self, foe,
       weather: s.weather ?? '', terrain: s.terrain ?? '',
       moves: c.moves.map((mo: { index: number; id: string; name: string; pp: number; maxpp: number }) => {
-        const md = (Sim.Dex as any).forGen(9).moves.get(mo.id);
-        return { index: mo.index, name: mo.name, type: md.type, category: md.category, pp: mo.pp, maxpp: mo.maxpp };
+        const md = dex.moves.get(mo.id);
+        return {
+          index: mo.index, name: mo.name, type: md.type, category: md.category, pp: mo.pp, maxpp: mo.maxpp,
+          power: md.basePower || null, accuracy: md.accuracy === true ? null : md.accuracy,
+          shortDesc: md.shortDesc ?? md.desc ?? '',
+          eff: md.category === 'Status' ? null : this.typeEff(md.type, foe.types),
+        };
       }),
+      bag: this.battleBag(), inBattleItems: !this.battle!.isWild ? true : true, // bag usable in any battle
       switches, balls,
       canCatch: c.canCatch, log: b.log,
       done: s.winner !== undefined ? (s.winner === 'p1' ? 'win' : 'loss') : null,
     };
+  }
+
+  // Field-usable healing/status/X items in the bag, for the in-battle BAG menu.
+  private battleBag() {
+    const usable = ['heal', 'cure', 'revive', 'pp'];
+    const out: { itemId: string; name: string; count: number; effect: string }[] = [];
+    for (const items of Object.values(this.state.bag)) {
+      for (const [id, count] of Object.entries(items as Record<string, number>)) {
+        let def; try { def = getItem(id); } catch { continue; }
+        if (usable.includes(def.effect.kind)) out.push({ itemId: id, name: def.name, count, effect: def.effect.kind });
+      }
+    }
+    return out;
   }
 
   private narrate(events: any[], name: (side: string) => string): string {
@@ -418,6 +470,39 @@ class GameSession {
     return this.battleView();
   }
 
+  // Use a healing/cure item on the active mon mid-battle. (v1: does not consume the
+  // turn — Showdown has no "skip" action; a turn-cost variant is a later refinement.)
+  async useItemBattle(itemId: string) {
+    const b = this.battle; if (!b) return this.view();
+    let def; try { def = getItem(itemId); } catch { return this.battleView(); }
+    // Sync the LIVE battle HP/status onto the party mon first — applyItem judges
+    // "already full"/"no status" against the stored mon, which is stale mid-battle.
+    const live = b.bridge.state.active.p1;
+    if (live) {
+      const cur = this.activeMon();
+      const liveHp = Math.max(0, Math.round((live.hpPercent / 100) * maxHp(cur)));
+      this.state = { ...this.state, party: this.state.party.map((p, i) => (i === b.activeIdx ? { ...setHp(p, liveHp), status: live.status || '' } : p)) };
+    }
+    const mon = this.activeMon();
+    const { state, result } = applyItem(this.state, itemId, mon.uid);
+    if (!result.ok) { b.log = `Can't use ${def.name}: ${result.reason}.`; return this.battleView(); }
+    this.state = this.consume(state, def.pocket, itemId);
+    const healed = this.activeMon();
+    b.bridge.setActiveHp('p1', Math.round((healed.currentHp / maxHp(healed)) * 100), def.effect.kind === 'cure');
+    b.log = `You used ${def.name} on ${healed.species}!`;
+    return this.battleView();
+  }
+
+  // Flee a wild battle (persists the team's battle HP/status).
+  async run() {
+    const b = this.battle; if (!b) return this.view();
+    if (!b.isWild) { b.log = "There's no running from a Trainer battle!"; return this.battleView(); }
+    const fc = b.bridge.finalConditions().p1;
+    this.writeBackParty(this.state.party.map((p, i) => ({ hpPercent: fc[i]?.hpPercent ?? Math.round((p.currentHp / maxHp(p)) * 100), status: fc[i]?.status ?? (p.status ?? '') })));
+    this.battle = null; this.message = 'Got away safely!';
+    return this.view();
+  }
+
   // Write each party member's end-of-battle HP/status back onto the saved party.
   private writeBackParty(fc: { hpPercent: number; status: string }[]) {
     this.state = { ...this.state, party: this.state.party.map((p, i) => fc[i] ? { ...setHp(p, Math.round((fc[i].hpPercent / 100) * maxHp(p))), status: fc[i].status } : p) };
@@ -468,6 +553,8 @@ export async function dispatch(cmd: string, body: any) {
     case 'turn': return singleton.turn(body.index);
     case 'switchMon': return singleton.switchMon(body.index);
     case 'catch': return singleton.catch(body.ball ?? 'poke');
+    case 'useItemBattle': return singleton.useItemBattle(body.itemId);
+    case 'run': return singleton.run();
     case 'summary': return singleton.summary(body.uid);
     case 'boxNav': return singleton.boxNav(body.delta);
     case 'deposit': return singleton.deposit(body.uid);
