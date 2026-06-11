@@ -1,5 +1,5 @@
 export interface Warp { x: number; y: number; toMap: string; toX: number; toY: number; }
-export interface Trigger { x: number; y: number; kind: 'gym' | 'shop' | 'center' | 'npc' | 'sign'; ref?: string; }
+export interface Trigger { x: number; y: number; kind: 'gym' | 'shop' | 'center' | 'npc' | 'sign' | 'warden'; ref?: string; }
 
 export interface MapV2 {
   id: string;
