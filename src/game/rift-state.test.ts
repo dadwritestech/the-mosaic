@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { riftStatus, riftsAddressedCount, partyGenLean, sealDirectionBiome, sealRift, attuneRift } from './rift-state';
+import { riftStatus, riftsAddressedCount, partyGenLean, sealDirectionBiome, sealRift, attuneRift, zoneEncounters, ATTUNE_LEVEL_BUMP } from './rift-state';
 import { getRift } from '../content/rifts';
 import type { GameState } from './types';
 
@@ -55,5 +55,28 @@ describe('seal / attune actions', () => {
     const once = sealRift(baseState([{ species: 'Pidgey' }]), thornmarsh);
     const twice = attuneRift(once, thornmarsh);
     expect(twice).toBe(once);
+  });
+});
+
+describe('zoneEncounters', () => {
+  const thornmarsh = getRift('thornmarsh')!;
+  it('unsealed yields the fused table', () => {
+    const s = { riftStates: {} } as GameState;
+    expect(zoneEncounters(s, thornmarsh)).toBe(thornmarsh.fusedEncounters);
+  });
+  it('sealed yields the surviving region pure table', () => {
+    const a = { riftStates: { thornmarsh: { status: 'sealed', biome: 'kanto-plains' } } } as unknown as GameState;
+    expect(zoneEncounters(a, thornmarsh)).toBe(thornmarsh.pureEncountersA);
+    const b = { riftStates: { thornmarsh: { status: 'sealed', biome: 'johto-forests' } } } as unknown as GameState;
+    expect(zoneEncounters(b, thornmarsh)).toBe(thornmarsh.pureEncountersB);
+  });
+  it('attuned yields fused with levels bumped (original untouched)', () => {
+    const s = { riftStates: { thornmarsh: { status: 'attuned' } } } as unknown as GameState;
+    const base = thornmarsh.fusedEncounters.morning![0];
+    const baseMin = base.minLevel, baseMax = base.maxLevel;
+    const bumped = zoneEncounters(s, thornmarsh).morning![0];
+    expect(bumped.minLevel).toBe(baseMin + ATTUNE_LEVEL_BUMP);
+    expect(bumped.maxLevel).toBe(baseMax + ATTUNE_LEVEL_BUMP);
+    expect(thornmarsh.fusedEncounters.morning![0].minLevel).toBe(baseMin);
   });
 });

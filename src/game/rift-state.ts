@@ -1,6 +1,6 @@
 import * as Sim from 'pokemon-showdown';
 import type { GameState, RiftStatus } from './types';
-import type { Biome, RiftDef } from '../content/types';
+import type { Biome, RiftDef, EncounterTable, TimeBucket } from '../content/types';
 import { BIOME_GEN, speciesGeneration } from './generations';
 import { pushMeter } from './story';
 
@@ -52,4 +52,24 @@ export function attuneRift(state: GameState, rift: RiftDef): GameState {
   if (addressed(state, rift.id)) return state;
   const pushed = pushMeter(state, +ATTUNE_DELTA);
   return { ...pushed, riftStates: { ...pushed.riftStates, [rift.id]: { status: 'attuned' } } };
+}
+
+export const ATTUNE_LEVEL_BUMP = 4;
+
+function bumpLevels(table: EncounterTable, by: number): EncounterTable {
+  const out: EncounterTable = {};
+  for (const bucket of Object.keys(table) as TimeBucket[]) {
+    const list = table[bucket];
+    if (!list) continue;
+    out[bucket] = list.map((e) => ({ ...e, minLevel: e.minLevel + by, maxLevel: e.maxLevel + by }));
+  }
+  return out;
+}
+
+/** The encounter table a rift's zone yields in its current state. */
+export function zoneEncounters(state: GameState, rift: RiftDef): EncounterTable {
+  const st = state.riftStates[rift.id];
+  if (!st || st.status === 'unsealed') return rift.fusedEncounters;
+  if (st.status === 'attuned') return bumpLevels(rift.fusedEncounters, ATTUNE_LEVEL_BUMP);
+  return st.biome === rift.biomeA ? rift.pureEncountersA : rift.pureEncountersB;
 }
