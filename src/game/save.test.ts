@@ -16,7 +16,7 @@ describe('save/load', () => {
 
   it('stamps schemaVersion in the serialized payload', () => {
     const g = createNewGame({ difficultyMode: 'normal', nuzlocke: false });
-    expect(JSON.parse(serialize(g)).schemaVersion).toBe(1);
+    expect(JSON.parse(serialize(g)).schemaVersion).toBe(2);
   });
 
   it('validateAndRepair clamps an over-cap save', () => {

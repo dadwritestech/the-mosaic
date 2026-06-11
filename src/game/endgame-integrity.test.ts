@@ -13,11 +13,11 @@ const legal = async (team: any[]) => {
 };
 
 describe('endgame content integrity', () => {
-  it('5 story beats, badge-gated in ascending order, with faction choices', () => {
+  it('5 story beats, rift-gated in ascending order, with faction choices', () => {
     expect(STORY_BEATS.length).toBe(5);
     let prev = -1;
     for (const b of STORY_BEATS) {
-      expect(b.requiredBadges).toBeGreaterThanOrEqual(prev); prev = b.requiredBadges;
+      expect(b.requiredRifts).toBeGreaterThanOrEqual(prev); prev = b.requiredRifts ?? prev;
       expect(b.choices.some((c) => c.faction === 'purist' && c.meterDelta < 0)).toBe(true);
       expect(b.choices.some((c) => c.faction === 'synthesist' && c.meterDelta > 0)).toBe(true);
     }

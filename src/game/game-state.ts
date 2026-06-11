@@ -4,7 +4,7 @@ const BOX_COUNT = 8, BOX_SIZE = 30;
 
 export function createNewGame(settings: GameSettings): GameState {
   return {
-    schemaVersion: 1, settings,
+    schemaVersion: 2, settings,
     party: [], boxes: Array.from({ length: BOX_COUNT }, (_, i) => ({ name: `Box ${i + 1}`, slots: Array(BOX_SIZE).fill(null) })),
     bag: {}, money: 0, badges: [],
     pokedex: { seen: new Set(), caught: new Set() },

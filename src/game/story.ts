@@ -1,7 +1,8 @@
 import type { GameState } from './types';
+import { riftsAddressedCount } from './rift-state';
 
 export interface StoryChoice { label: string; faction: 'purist' | 'synthesist' | 'neutral'; meterDelta: number; }
-export interface StoryBeat { id: string; requiredBadges: number; dialogue: string[]; choices: StoryChoice[]; }
+export interface StoryBeat { id: string; requiredBadges?: number; requiredRifts?: number; dialogue: string[]; choices: StoryChoice[]; }
 export type MeterTier = 'reset' | 'balance' | 'embrace';
 
 export function pushMeter(state: GameState, delta: number): GameState {
@@ -15,7 +16,17 @@ export function meterTier(state: GameState): MeterTier {
 }
 
 export function nextBeat(state: GameState, beats: StoryBeat[]): StoryBeat | null {
-  return beats.find((b) => b.requiredBadges <= state.badges.length && !state.flags[`beat:${b.id}`]) ?? null;
+  const rifts = riftsAddressedCount(state);
+  return beats.find((b) => {
+    if (state.flags[`beat:${b.id}`]) return false;
+    if (b.requiredRifts !== undefined) return b.requiredRifts <= rifts;
+    return (b.requiredBadges ?? Infinity) <= state.badges.length;
+  }) ?? null;
+}
+
+export function convergenceEnding(state: GameState): 'reset' | 'embrace' | 'third' {
+  const t = meterTier(state);
+  return t === 'balance' ? 'third' : t;
 }
 
 export function resolveBeat(state: GameState, beats: StoryBeat[], beatId: string, choiceIndex: number): GameState {
