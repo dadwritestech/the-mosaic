@@ -13,7 +13,8 @@ const OUTSIDE_AUTOTILES = ['Sea', 'Sea without shore', 'Sea deep', 'Sand shore',
 /** Turn a rift (+ seed + knobs) into a walkable MapV2 with a biome seam. */
 export function generateRiftMap(rift: RiftDef, seed: number, knobs: GenKnobs): MapV2 {
   const { width, height } = knobs;
-  const rng = makeRng((seed ^ 0xf111) >>> 0);
+  const rng = makeRng((seed ^ 0xf111) >>> 0);       // features / accents
+  const grassRng = makeRng((seed ^ 0xc77d) >>> 0);  // grass — independent stream so the two density knobs don't cross-tune
   const seam = computeSeam(seed, knobs);
   const path = carvePath(seed, knobs);
   const palA = BIOME_PALETTES[knobs.forcedBiome ?? rift.biomeA];
@@ -52,7 +53,7 @@ export function generateRiftMap(rift: RiftDef, seed: number, knobs: GenKnobs): M
       } else {
         r1.push(0);
         rp.push(true); rpr.push(0);
-        re.push(rng() < knobs.grassDensity); // encounter grass
+        re.push(grassRng() < knobs.grassDensity); // encounter grass
       }
     }
     layer0.push(r0); layer1.push(r1); layer2.push(r2);
