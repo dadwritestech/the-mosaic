@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { riftStatus, riftsAddressedCount, partyGenLean, sealDirectionBiome } from './rift-state';
+import { riftStatus, riftsAddressedCount, partyGenLean, sealDirectionBiome, sealRift, attuneRift } from './rift-state';
 import { getRift } from '../content/rifts';
 import type { GameState } from './types';
+
+const baseState = (party: { species: string }[]) =>
+  ({ riftStates: {}, stabilizeMeter: 0, party } as unknown as GameState);
 
 const stateWith = (riftStates: GameState['riftStates']) => ({ riftStates } as GameState);
 
@@ -33,5 +36,24 @@ describe('sealDirectionBiome', () => {
   });
   it('old-leaning team collapses to the lower-gen region', () => {
     expect(sealDirectionBiome(thornmarsh, [{ species: 'Pidgey' }, { species: 'Rattata' }])).toBe('kanto-plains');
+  });
+});
+
+describe('seal / attune actions', () => {
+  const thornmarsh = getRift('thornmarsh')!;
+  it('sealRift sets sealed + chosen biome and pushes the meter toward Reset', () => {
+    const s = sealRift(baseState([{ species: 'Pidgey' }]), thornmarsh);
+    expect(s.riftStates['thornmarsh']).toEqual({ status: 'sealed', biome: 'kanto-plains' });
+    expect(s.stabilizeMeter).toBeLessThan(0);
+  });
+  it('attuneRift sets attuned and pushes the meter toward Embrace', () => {
+    const s = attuneRift(baseState([{ species: 'Pidgey' }]), thornmarsh);
+    expect(s.riftStates['thornmarsh'].status).toBe('attuned');
+    expect(s.stabilizeMeter).toBeGreaterThan(0);
+  });
+  it('is a no-op once a rift is already addressed', () => {
+    const once = sealRift(baseState([{ species: 'Pidgey' }]), thornmarsh);
+    const twice = attuneRift(once, thornmarsh);
+    expect(twice).toBe(once);
   });
 });
