@@ -1,6 +1,6 @@
 import { api } from './net';
-import { OverworldScreen2D } from './overworld/overworld2d';
-import { BattleScreenV2 } from './battle/battle3';
+import { OverworldScreen3D } from './overworld/overworld3d';
+import { BattleScreen } from './battle/battle-screen';
 import { Menu } from './ui/menu';
 import { TitleScreen } from './screens/title';
 import { OptionsScreen } from './screens/options';
@@ -11,7 +11,7 @@ import { RegionMapScreen } from './screens/regionmap';
 
 const root = document.getElementById('game')!;
 
-let battle: BattleScreenV2 | null = null;
+let battle: BattleScreen | null = null;
 let busy = false;
 let lastBaseView: any = null;  // remembers the screen behind Options overlay
 
@@ -36,7 +36,7 @@ async function send(cmd: string, body: Record<string, unknown> = {}) {
   try { render(await api(cmd, body)); } finally { busy = false; }
 }
 
-const overworld = new OverworldScreen2D(root, (dir) => send('move', { dir }));
+const overworld = new OverworldScreen3D(root, (dir) => send('move', { dir }));
 const menu = new Menu(root, (cmd, body) => send(cmd, body));
 
 // M opens the pause menu, Escape closes it (overworld only).
@@ -136,7 +136,7 @@ function render(view: any) {
   /* ---- battle (existing — catch-all for anything that is not overworld) ---- */
   overworld.hide();
   menu.clear();
-  if (!battle) battle = new BattleScreenV2(root, (cmd, body) => send(cmd, body ?? {}));
+  if (!battle) battle = new BattleScreen(root, (cmd, body) => send(cmd, body ?? {}));
   void battle.render(view);
 }
 

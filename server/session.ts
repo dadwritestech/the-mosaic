@@ -85,7 +85,9 @@ class GameSession {
   }
   private map(): TileMap { return SLICE_MAPS[this.locationId]; }
   /** The current location's imported map, or null if it's a legacy TileMap location. */
-  private curMapV2(): MapV2 | null { return hasMapV2(this.locationId) ? loadMapV2(this.locationId) : null; }
+  // MapV2 (Essentials-imported 2D tiles) retired in favour of the 3D overworld,
+  // which renders the legacy tile-string maps. Force the legacy path everywhere.
+  private curMapV2(): MapV2 | null { return null; }
   private dexNum(species: string): number { return (Sim.Dex as any).forGen(9).species.get(species).num; }
 
   /** Move into a location, placing the player at its spawn (works for either map type). */
