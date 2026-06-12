@@ -17,6 +17,8 @@ export class BattleScreen {
   private foeKey = '';
   private lastT = performance.now();
   private running = false;
+  private endedEl: HTMLDivElement | null = null;
+  private endKey: ((e: KeyboardEvent) => void) | null = null;
 
   constructor(private host: HTMLElement, private onAction: (cmd: string, body?: Record<string, unknown>) => void) {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -93,7 +95,47 @@ export class BattleScreen {
       moves: view.moves, switches: view.switches ?? [], balls: view.balls ?? [],
       canCatch: view.canCatch, log: view.log,
     });
+    if ((view as any).ended) this.showEnded((view as any).ended); else this.clearEnded();
     if (!this.running) { this.running = true; this.loop(); }
+  }
+
+  private clearEnded() {
+    if (this.endedEl) { this.endedEl.remove(); this.endedEl = null; }
+    if (this.endKey) { window.removeEventListener('keydown', this.endKey); this.endKey = null; }
+  }
+
+  // Battle-over overlay: result + rewards + a Continue button (battleContinue).
+  // Without this the screen stays on the move list after the foe faints — stuck.
+  private showEnded(ended: any) {
+    if (this.endedEl) return;
+    const RC: Record<string, string> = { win: '#43e07d', caught: '#5db4ff', loss: '#ff7a6b', run: '#cbd5e1' };
+    const color = RC[ended.result] ?? '#fff';
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:absolute;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;background:rgba(8,11,20,.5);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)';
+    const card = document.createElement('div');
+    card.className = 'hud-glass';
+    card.style.cssText = 'min-width:300px;max-width:78%;padding:26px 32px;border-radius:22px;text-align:center;display:flex;flex-direction:column;gap:8px;color:#eef3ff;font-family:"Segoe UI",system-ui,sans-serif';
+    const add = (text: string, css: string) => { const d = document.createElement('div'); d.textContent = text; d.style.cssText = css; card.appendChild(d); };
+    for (const ln of (ended.lines ?? [ended.message]) as string[]) add(ln, `font-size:18px;font-weight:800;color:${color};text-shadow:0 1px 3px rgba(0,0,0,.4)`);
+    const r = ended.rewards;
+    if (r) {
+      if (r.money) add(`+${r.money}₽`, 'font-size:14px;font-weight:600;color:#ffd76a;margin-top:4px');
+      for (const e of (r.exp ?? [])) add(`${e.species} +${e.amount} EXP`, 'font-size:13px;color:#cbd9f2');
+      for (const lu of (r.levelUps ?? [])) add(`${lu.species} grew to Lv ${lu.level}!${lu.evolutionInto ? ` It evolved into ${lu.evolutionInto}!` : ''}`, 'font-size:13px;font-weight:700;color:#9ee7ff');
+      for (const it of (r.items ?? [])) add(`Found ${it}!`, 'font-size:13px;color:#d6c8ff');
+    }
+    const cont = document.createElement('button');
+    cont.className = 'hud-btn';
+    cont.textContent = 'Continue ▶';
+    cont.style.cssText = 'pointer-events:auto;margin-top:12px;align-self:center;background:linear-gradient(135deg,#43e07d,#28c866);color:#06210f;font-size:16px;font-weight:800;padding:12px 30px;border:0;border-radius:99px;cursor:pointer';
+    cont.addEventListener('click', () => this.onAction('battleContinue'));
+    card.appendChild(cont);
+    overlay.appendChild(card);
+    this.host.appendChild(overlay);
+    this.endedEl = overlay;
+    // Enter / Space also continues (fast pick-up-and-play)
+    this.endKey = (e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this.onAction('battleContinue'); } };
+    window.addEventListener('keydown', this.endKey);
   }
 
   // Keep feet on the ground each frame: loadModel only grounds the bind pose,
@@ -116,5 +158,5 @@ export class BattleScreen {
     this.renderer.render(this.scene, this.camera);
   };
 
-  dispose() { this.running = false; this.hud.clear(); this.renderer.domElement.remove(); this.renderer.dispose(); }
+  dispose() { this.running = false; this.clearEnded(); this.hud.clear(); this.renderer.domElement.remove(); this.renderer.dispose(); }
 }
