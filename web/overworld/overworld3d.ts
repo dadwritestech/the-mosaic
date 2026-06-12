@@ -117,9 +117,9 @@ export class OverworldScreen3D {
 
     // DOM HUD overlay
     this.topbar = document.createElement('div');
-    this.topbar.style.cssText = 'position:absolute;top:0;left:0;right:0;background:linear-gradient(#0b0f17cc,#0b0f1700);padding:8px 14px;color:#fff;font:600 15px system-ui;pointer-events:none';
+    this.topbar.style.cssText = "position:absolute;top:0;left:0;right:0;background:linear-gradient(180deg,rgba(12,15,24,.72),rgba(12,15,24,0));backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);padding:13px 20px 24px;color:#eef3ff;font:600 14px 'Segoe UI',system-ui,sans-serif;letter-spacing:.2px;pointer-events:none";
     this.msgbar = document.createElement('div');
-    this.msgbar.style.cssText = 'position:absolute;bottom:18px;left:50%;transform:translateX(-50%);background:rgba(20,30,46,.92);color:#fff;padding:10px 22px;border-radius:14px;font:500 17px system-ui;pointer-events:none;display:none;box-shadow:0 6px 20px #0006';
+    this.msgbar.style.cssText = "position:absolute;bottom:22px;left:50%;transform:translateX(-50%);background:rgba(18,22,36,.7);backdrop-filter:blur(16px) saturate(1.2);-webkit-backdrop-filter:blur(16px) saturate(1.2);border:1px solid rgba(255,255,255,.14);color:#fff;padding:12px 26px;border-radius:18px;font:600 16px 'Segoe UI',system-ui,sans-serif;pointer-events:none;display:none;box-shadow:0 10px 30px rgba(0,0,0,.4)";
     this.host.appendChild(this.topbar);
     this.host.appendChild(this.msgbar);
 

@@ -3,6 +3,7 @@
 // button presses back as commands. No game logic lives here.
 import { renderSummary, renderBox, renderPokedex, renderVsSeeker } from './menu-screens';
 import { select as sfxSelect, confirm as sfxConfirm, cancel as sfxCancel } from '../audio/sfx';
+import { ensureTheme, GLASS, BTN_PRIMARY, BTN_NEUTRAL } from './theme';
 
 type Send = (cmd: string, body?: Record<string, unknown>) => void;
 
@@ -16,8 +17,8 @@ function el(tag: string, style: string, text?: string): HTMLElement {
   return e;
 }
 
-const BTN = 'pointer-events:auto;background:#3a5a8c;color:#fff;border:0;border-radius:8px;padding:10px 16px;cursor:pointer;font-size:15px;font-weight:600;box-shadow:0 2px 5px #0003';
-const BTN_ALT = BTN.replace('#3a5a8c', '#4a4a55');
+const BTN = BTN_PRIMARY;
+const BTN_ALT = BTN_NEUTRAL;
 
 function inferCategory(id: string, name: string): string {
   const lower = (id + ' ' + name).toLowerCase();
@@ -34,13 +35,15 @@ export class Menu {
   private reorder = false;                 // party reorder mode (vs. open-summary)
 
   constructor(parent: HTMLElement, private send: Send) {
+    ensureTheme();
     this.root = document.createElement('div');
-    this.root.style.cssText = 'position:absolute;inset:0;pointer-events:none;font-family:system-ui;z-index:20';
+    this.root.style.cssText = "position:absolute;inset:0;pointer-events:none;font-family:'Segoe UI',system-ui,sans-serif;z-index:20";
     parent.appendChild(this.root);
   }
 
   private button(label: string, onClick: () => void, style = BTN): HTMLElement {
     const b = el('button', style, label);
+    b.className = 'ui-press';
     b.addEventListener('mouseenter', () => { try { sfxSelect(); } catch { /* */ } });
     b.addEventListener('click', () => {
       try { sfxConfirm(); } catch { /* */ }
@@ -51,6 +54,7 @@ export class Menu {
 
   private cancelButton(label: string, onClick: () => void, style = BTN_ALT): HTMLElement {
     const b = el('button', style, label);
+    b.className = 'ui-press';
     b.addEventListener('mouseenter', () => { try { sfxSelect(); } catch { /* */ } });
     b.addEventListener('click', () => {
       try { sfxCancel(); } catch { /* */ }
@@ -60,9 +64,10 @@ export class Menu {
   }
 
   private panel(title: string, body: HTMLElement, footer?: HTMLElement[]): HTMLElement {
-    const backdrop = el('div', 'position:absolute;inset:0;background:rgba(8,12,20,.55);display:flex;align-items:center;justify-content:center;pointer-events:auto');
-    const card = el('div', 'background:#1f2a3d;color:#fff;border:2px solid #3a5a8c;border-radius:14px;padding:18px 20px;min-width:340px;max-width:560px;max-height:80vh;overflow:auto;box-shadow:0 10px 40px #000a');
-    card.appendChild(el('div', 'font-size:18px;font-weight:700;margin-bottom:12px', title));
+    const backdrop = el('div', 'position:absolute;inset:0;background:rgba(8,11,20,.5);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;pointer-events:auto');
+    const card = el('div', `${GLASS};color:#eef3ff;border-radius:20px;padding:20px 22px;min-width:340px;max-width:560px;max-height:82vh;overflow:auto`);
+    card.className = 'ui-scroll';
+    card.appendChild(el('div', 'font-size:19px;font-weight:800;letter-spacing:.3px;margin-bottom:14px;color:#fff', title));
     card.appendChild(body);
     if (footer && footer.length) {
       const f = el('div', 'display:flex;gap:8px;margin-top:14px;flex-wrap:wrap');
@@ -79,15 +84,16 @@ export class Menu {
   }
 
   private monCard(m: any, onClick: () => void, highlight: boolean): HTMLElement {
-    const c = el('button', `pointer-events:auto;text-align:left;display:block;width:100%;margin-bottom:8px;background:${highlight ? '#2c4a6e' : '#27344a'};border:2px solid ${highlight ? '#ffd36b' : '#33405a'};border-radius:10px;padding:10px 12px;cursor:pointer;color:#fff`);
+    const c = el('button', `pointer-events:auto;text-align:left;display:block;width:100%;margin-bottom:9px;background:${highlight ? 'rgba(255,211,107,.14)' : 'rgba(255,255,255,.06)'};border:1px solid ${highlight ? '#ffd36b' : 'rgba(255,255,255,.12)'};border-radius:13px;padding:11px 13px;cursor:pointer;color:#fff`);
+    c.className = 'ui-cardh';
     const top = el('div', 'display:flex;align-items:center;justify-content:space-between');
-    const nameWrap = el('span', 'font-weight:600;font-size:15px', `${m.species}  Lv.${m.level}`);
+    const nameWrap = el('span', 'font-weight:700;font-size:15px', `${m.species}  Lv.${m.level}`);
     const badge = this.statusBadge(m.status); if (badge) nameWrap.appendChild(badge);
     top.appendChild(nameWrap);
     top.appendChild(el('span', 'font-size:12px;color:#cbd5e1', `${m.hp}/${m.maxHp} HP`));
     c.appendChild(top);
-    const track = el('div', 'height:7px;background:#0f1726;border-radius:4px;margin-top:6px;overflow:hidden');
-    track.appendChild(el('div', `height:100%;width:${Math.max(0, m.hpPercent)}%;background:${m.hpPercent > 50 ? '#37c24a' : m.hpPercent > 20 ? '#e0b341' : '#e0533a'}`));
+    const track = el('div', 'height:7px;background:rgba(0,0,0,.34);border-radius:99px;margin-top:7px;overflow:hidden');
+    track.appendChild(el('div', `height:100%;border-radius:99px;width:${Math.max(0, m.hpPercent)}%;background:${m.hpPercent > 50 ? 'linear-gradient(90deg,#43e07d,#28c866)' : m.hpPercent > 20 ? 'linear-gradient(90deg,#ffd76a,#f3b13c)' : 'linear-gradient(90deg,#ff7a6b,#e04a39)'}`));
     c.appendChild(track);
     c.addEventListener('click', onClick);
     return c;
