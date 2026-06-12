@@ -97,6 +97,7 @@ class GameSession {
     const mv = this.curMapV2();
     if (mv) { this.px = mv.spawn.x; this.py = mv.spawn.y; }
     else { const m = this.map(); this.px = m.spawn.x; this.py = m.spawn.y; }
+    this.autosave();
   }
 
   /** Debug: jump straight to any location (imported map or legacy). */
@@ -627,11 +628,16 @@ class GameSession {
     return this.battleView();
   }
 
+  // Autosave to a dedicated slot so the player can close the tab anytime and
+  // resume via the title's Continue. Fire-and-forget; called at safe checkpoints.
+  private autosave() { void this.saves.save('auto', serialize(this.state)); }
+
   // Dismiss the end-of-battle result screen and return to the overworld.
   battleContinue() {
     const b = this.battle; if (!b) return this.view();
     this.message = b.ended?.message ?? '';
     this.battle = null;
+    this.autosave();
     return this.view();
   }
 
@@ -648,11 +654,12 @@ class GameSession {
     return { __reset: true };
   }
 
-  /** Load game: try the first available save slot. */
+  /** Load game: prefer the autosave slot, else the first available save. */
   async loadGame(): Promise<any> {
     const slots = await this.saves.list();
     if (!slots.length) return this.view();
-    const json = await this.saves.load(slots[0].slot);
+    const pick = slots.find((s) => s.slot === 'auto') ?? slots[0];
+    const json = await this.saves.load(pick.slot);
     if (!json) return this.view();
     return { __load: json };
   }
