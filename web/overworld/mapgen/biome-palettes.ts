@@ -8,16 +8,19 @@ export interface BiomePalette {
   accentTiles: number[];  // layer-1 non-blocking decals (flowers); may be empty
 }
 
-// Tile IDs harvested from converted Essentials Outside maps (cerulean-deep / aethels-rest).
-// plains/forest/beach/gardens/city authentic; volcano(alola)/tundra(sinnoh) approximated.
+// Tile IDs eyeball-verified against the Outside.png tile reference sheet (tilesheet.html):
+//   385 plain grass · 433 mint grass · 480 sand · 624/632 cave-dirt · 664 snow
+//   481 sand trail · 388 grass-edge · 858/907 self-contained bush · 1033 rock mound · 262 flowers (autotile)
+// Single-cell self-contained features only (a whole bush/rock per cell) so scatter never shows fragments.
+// plains/forest/beach/gardens authentic; volcano(alola)/tundra(sinnoh)/urban(unova) approximated.
 export const BIOME_PALETTES: Record<Biome, BiomePalette> = {
-  'kanto-plains':      { groundTile: 385, pathTile: 801, featureTiles: [1681, 1682], accentTiles: [262] },
-  'johto-forests':     { groundTile: 401, pathTile: 801, featureTiles: [1681, 1960], accentTiles: [] },
-  'hoenn-beaches':     { groundTile: 546, pathTile: 801, featureTiles: [1664],       accentTiles: [] },
-  'sinnoh-tundra':     { groundTile: 386, pathTile: 801, featureTiles: [1664],       accentTiles: [] }, // approx snow
-  'unova-urban':       { groundTile: 800, pathTile: 808, featureTiles: [1664],       accentTiles: [] },
-  'kalos-gardens':     { groundTile: 385, pathTile: 801, featureTiles: [1681],       accentTiles: [262] },
-  'alola-islands':     { groundTile: 808, pathTile: 801, featureTiles: [1664],       accentTiles: [] }, // approx volcano
-  'galar-countryside': { groundTile: 401, pathTile: 801, featureTiles: [1681],       accentTiles: [] }, // not used by rifts; type completeness
-  'paldea-wilds':      { groundTile: 401, pathTile: 808, featureTiles: [1681],       accentTiles: [] },
+  'kanto-plains':      { groundTile: 385, pathTile: 481, featureTiles: [858],       accentTiles: [262] },
+  'johto-forests':     { groundTile: 433, pathTile: 481, featureTiles: [858],       accentTiles: [] },
+  'hoenn-beaches':     { groundTile: 480, pathTile: 388, featureTiles: [1033],      accentTiles: [] },
+  'sinnoh-tundra':     { groundTile: 664, pathTile: 385, featureTiles: [1033],      accentTiles: [] }, // approx snow
+  'unova-urban':       { groundTile: 624, pathTile: 385, featureTiles: [1033],      accentTiles: [] }, // approx pavement
+  'kalos-gardens':     { groundTile: 385, pathTile: 481, featureTiles: [858],       accentTiles: [262] },
+  'alola-islands':     { groundTile: 632, pathTile: 481, featureTiles: [1033],      accentTiles: [] }, // approx volcano
+  'galar-countryside': { groundTile: 433, pathTile: 481, featureTiles: [858],       accentTiles: [] }, // not used by rifts; type completeness
+  'paldea-wilds':      { groundTile: 433, pathTile: 481, featureTiles: [858],       accentTiles: [] },
 };
