@@ -34,6 +34,7 @@ export function addToParty(g: GameState, mon: OwnedPokemon): GameState {
 }
 
 export function depositToBox(g: GameState, uid: string): GameState {
+  if (g.party.length <= 1) return g; // Cannot deposit last party member
   const mon = g.party.find((m) => m.uid === uid);
   if (!mon) return g;
   const free = firstFreeBoxSlot(g);

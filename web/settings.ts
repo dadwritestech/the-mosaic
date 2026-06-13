@@ -9,6 +9,8 @@ export interface GameSettings {
   sfxVolume: number;     // 0-100
   masterVolume: number;  // 0-100
   dayNightTint: boolean;
+  sidebarOpen: boolean;
+  sidebarCards: string[];
 }
 
 const DEFAULTS: GameSettings = {
@@ -17,6 +19,8 @@ const DEFAULTS: GameSettings = {
   sfxVolume: 80,
   masterVolume: 80,
   dayNightTint: true,
+  sidebarOpen: true,
+  sidebarCards: ['party', 'pokedex', 'map'],
 };
 
 function load(): GameSettings {

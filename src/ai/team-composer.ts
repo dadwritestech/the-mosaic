@@ -29,9 +29,9 @@ function pickWeighted(pool: SpeciesLite[], counter: number, rng: () => number): 
 }
 
 const EVS_BY_TIER: Record<BaseTier, PokemonSet['evs']> = {
-  easy:   { hp: 85, atk: 85, def: 85, spa: 85, spd: 85, spe: 85 },
-  normal: { hp: 0, atk: 128, def: 64, spa: 128, spd: 64, spe: 128 },
-  hard:   { hp: 0, atk: 252, def: 4, spa: 252, spd: 0, spe: 252 },
+  easy:   { hp: 85, atk: 85, def: 85, spa: 85, spd: 85, spe: 85 }, // 510
+  normal: { hp: 0, atk: 128, def: 63, spa: 128, spd: 63, spe: 128 }, // 510
+  hard:   { hp: 0, atk: 252, def: 4, spa: 252, spd: 0, spe: 0 }, // 508 — max mixed offense (legal), keeps battles decisive
 };
 
 export function composeTeam(def: TrainerDef, ctx: ComposeContext): TeamSpec {

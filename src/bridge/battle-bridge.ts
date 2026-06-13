@@ -29,6 +29,7 @@ export class BattleBridge {
   private streams!: { omniscient: any; p1: any; p2: any };
   private nameMap: Record<string, Side> = { P1: 'p1', P2: 'p2' };
   private latestRequest: Record<Side, any> = { p1: null, p2: null };
+  private autoSwitchAll = false;   // when true, auto-resolve p1's forced switches too (autonomous battles/tests)
 
   private eventBuffer: BattleEvent[] = [];
   private turnResolver: (() => void) | null = null;
@@ -42,6 +43,7 @@ export class BattleBridge {
   async startBattle(p1Team: TeamSpec, p2Team: TeamSpec, opts: BattleOpts = {}): Promise<BattleState> {
     this._state = { isWild: !!opts.isWild, turn: 0, active: { p1: null, p2: null }, winner: undefined };
     this.latestRequest = { p1: null, p2: null };
+    this.autoSwitchAll = !!opts.autoResolveSwitch;
     this.eventBuffer = [];
 
     this.stream = new Sim.BattleStream();
@@ -77,8 +79,17 @@ export class BattleBridge {
           const req = JSON.parse(json);
           if (req.wait) { this.latestRequest[side] = null; continue; }
           if (req.teamPreview) { void s.write('default'); continue; }
-          if (req.forceSwitch) { void s.write('default'); this.latestRequest[side] = null; continue; }
-          this.latestRequest[side] = req; // active move request
+          if (req.forceSwitch) {
+            // AI (p2) always auto-switches; p1 auto-switches only in autonomous
+            // battles (tests). In the game, p1's forced switch is surfaced so the
+            // player chooses (stored in latestRequest below).
+            if (side === 'p2' || this.autoSwitchAll) {
+              void s.write('default');
+              this.latestRequest[side] = null;
+              continue;
+            }
+          }
+          this.latestRequest[side] = req; // active move or forceSwitch request
         }
       }
     })();
@@ -117,7 +128,12 @@ export class BattleBridge {
     const switches = (req?.side?.pokemon ?? []).map((p: any, i: number) => ({
       index: i + 1,
       species: p.details.split(',')[0],
-      hpPercent: p.condition.startsWith('0') ? 0 : 100,
+      hpPercent: (() => {
+        if (p.condition.startsWith('0')) return 0;
+        const hpStr = p.condition.split(' ')[0];
+        const [cur, max] = hpStr.split('/').map(Number);
+        return (max > 0) ? Math.round((cur / max) * 100) : 100;
+      })(),
       fainted: p.condition.includes('fnt'),
     }));
     return { moves, switches, canCatch: this._state.isWild && side === 'p1' };
@@ -162,7 +178,7 @@ export class BattleBridge {
     const battle: any = (this.stream as any).battle;
     const mon = battle?.sides?.[side === 'p1' ? 0 : 1]?.active?.[0];
     if (mon) {
-      mon.sethp(Math.max(1, Math.round((hpPercent / 100) * mon.maxhp)));
+      mon.sethp(hpPercent <= 0 ? 0 : Math.max(1, Math.round((hpPercent / 100) * mon.maxhp)));
       if (clearStatus && typeof mon.clearStatus === 'function') mon.clearStatus();
     }
   }
@@ -177,7 +193,7 @@ export class BattleBridge {
       const mons = battle.sides[sideIdx].pokemon;
       list.forEach((c, i) => {
         const p = mons[i]; if (!p) return;
-        if (typeof c.hpPercent === 'number') p.sethp(Math.max(1, Math.round((c.hpPercent / 100) * p.maxhp)));
+        if (typeof c.hpPercent === 'number') p.sethp(c.hpPercent <= 0 ? 0 : Math.max(1, Math.round((c.hpPercent / 100) * p.maxhp)));
         if (c.status) p.setStatus(statusMap[c.status] ?? c.status);
       });
     };
@@ -227,5 +243,11 @@ export class BattleBridge {
       case 'win': this._state.winner = ev.side; break;
       default: break;
     }
+  }
+
+  destroy(): void {
+    try {
+      if (this.stream) this.stream.destroy();
+    } catch { /* ignore */ }
   }
 }

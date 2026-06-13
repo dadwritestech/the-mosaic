@@ -11,8 +11,8 @@ import type { View } from '../net';
 // CC0 characters: player is an animated KayKit Knight (shared-rig clips);
 // townsfolk + Warden reuse the Quaternius static models for now.
 const PLAYER_MODEL = '/kit/adventurers/Knight.glb';
-const WARDEN_MODEL = '/kit/characters/soldier.glb';            // armed sentinel guarding the rift
 const NPC_MODELS = ['/kit/characters/man.glb', '/kit/characters/adventurer.glb']; // townsfolk
+// the Warden is a distinct animated KayKit Barbarian, loaded per-zone in placeWarden()
 
 // 3D overworld in the Let's Go spirit: a grassy field under a tilted 3/4 camera,
 // 3D buildings/trees, a follow-cam, soft shadows, and Pokémon roaming the field.
@@ -52,9 +52,11 @@ export class OverworldScreen3D {
   private hemi!: THREE.HemisphereLight;
   private particles?: THREE.Points;
   private swayables: THREE.Object3D[] = [];     // grass tufts that gently sway
+  private charMixers: THREE.AnimationMixer[] = []; // animated NPC/Warden mixers, updated per frame
   private villagers: { obj: THREE.Object3D; x: number; z: number; tx: number; tz: number; spd: number }[] = [];
   private timeKey = '';
-  private lastT = performance.now();
+  private lastT = performance.now() / 1000;
+  private camInit = false;
   // real CC0 (KayKit) model templates, cloned per placement
   private kitCache = new Map<string, THREE.Object3D>();
   private readonly TREES = ['/kit/nature/tree_single_A.gltf', '/kit/nature/tree_single_B.gltf', '/kit/nature/trees_A_medium.gltf', '/kit/nature/trees_B_medium.gltf', '/kit/nature/trees_A_small.gltf'];
@@ -70,6 +72,8 @@ export class OverworldScreen3D {
   private msgbar: HTMLDivElement;
 
   constructor(private host: HTMLElement, private onMove: (dir: string) => void) {
+    this.handleKeyDown = this.handleKeyDown.bind(this);
+    this.handleResize = this.handleResize.bind(this);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
     this.renderer.shadowMap.enabled = true;
@@ -116,12 +120,8 @@ export class OverworldScreen3D {
     this.composer.addPass(new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.25, 0.7, 0.9));
     this.composer.addPass(new OutputPass());
 
-    window.addEventListener('keydown', (e) => {
-      const map: Record<string, 'up' | 'down' | 'left' | 'right'> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
-      const dir = map[e.key];
-      if (dir) { e.preventDefault(); this.facing = dir; this.bob = 1; this.onMove(dir); }
-    });
-    window.addEventListener('resize', () => this.resize());
+    window.addEventListener('keydown', this.handleKeyDown);
+    window.addEventListener('resize', this.handleResize);
 
     // DOM HUD overlay
     this.topbar = document.createElement('div');
@@ -143,7 +143,6 @@ export class OverworldScreen3D {
       ...this.TREES.map((p) => this.cacheKit(p, 2.0)),
       ...this.ROCKS.map((p) => this.cacheKit(p, 0.6)),
       ...NPC_MODELS.map((p) => this.cacheKit(p, 1.5)),
-      this.cacheKit(WARDEN_MODEL, 1.6),
     ]);
     if (this.view) this.rebuildTiles(this.view);
   }
@@ -261,7 +260,7 @@ export class OverworldScreen3D {
 
   private rebuildTiles(view: View) {
     this.tileGroup.clear();
-    this.swayables = []; this.villagers = [];
+    this.swayables = []; this.villagers = []; this.charMixers = [];
     const tiles: string[][] = view.tiles;
     this.mapH = tiles.length; this.mapW = tiles[0].length;
     for (let y = 0; y < this.mapH; y++) {
@@ -287,11 +286,7 @@ export class OverworldScreen3D {
         else if (t === 'shop') { this.placeKit('building_B', x, y, 2.4); continue; }
         else if (t === 'gym') { this.placeKit('building_G', x, y, 3.0); continue; }
         else if (t === 'npc') obj = this.kitClone(NPC_MODELS[seed % NPC_MODELS.length]) ?? this.character(0x5a8fd6);
-        else if (t === 'warden') {
-          const w = this.kitClone(WARDEN_MODEL);
-          if (w) { w.scale.multiplyScalar(1.4); w.rotation.y = -Math.PI / 2; obj = w; } // bigger, faces the approaching player
-          else obj = this.character(0xc0392b);
-        }
+        else if (t === 'warden') { this.placeWarden(x, y); continue; }
         else if (t === 'floor' || t === 'exit') {
           const path = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.06, 0.98), new THREE.MeshStandardMaterial({ color: t === 'exit' ? '#e6cf86' : '#d9c28c' }));
           path.position.set(x, 0.0, y); path.receiveShadow = true; this.tileGroup.add(path); continue;
@@ -341,6 +336,20 @@ export class OverworldScreen3D {
     } catch { /* asset missing — skip */ }
   }
 
+  // The rift Warden: a distinct, larger, animated KayKit Barbarian (not a villager).
+  private async placeWarden(x: number, y: number) {
+    const loc = this.builtLocation;
+    try {
+      const c = await loadKayCharacter('/kit/adventurers/Barbarian.glb', 2.1);
+      if (this.builtLocation !== loc) return;
+      c.root.position.set(x, 0, y);
+      c.root.rotation.y = -Math.PI / 2; // face the player approaching from the left
+      c.play('Idle_A');
+      this.charMixers.push(c.mixer);
+      this.tileGroup.add(c.root);
+    } catch { /* asset missing — skip */ }
+  }
+
   // ---- frame --------------------------------------------------------------
 
   render(view: View) {
@@ -383,13 +392,15 @@ export class OverworldScreen3D {
     // follow camera (tilted 3/4, Let's Go-ish)
     const target = new THREE.Vector3(this.pvis.x, 0.7, this.pvis.z);
     const want = new THREE.Vector3(this.pvis.x, 9.5, this.pvis.z + 8.8);
-    this.cam.lerp(want, 0.12); if (this.cam.length() === 0) this.cam.copy(want);
+    this.cam.lerp(want, 0.12);
+    if (!this.camInit) { this.cam.copy(want); this.camInit = true; }
     this.camera.position.copy(this.cam);
     this.camera.lookAt(target);
 
     const now = performance.now() / 1000;
-    const dt = Math.min(0.05, now - this.lastT / 1000); this.lastT = performance.now();
+    const dt = Math.min(0.05, now - this.lastT); this.lastT = now;
     this.playerMixer?.update(dt);
+    for (const m of this.charMixers) m.update(dt);
 
     // grass sway — gentle wind, phase offset by position
     for (const s of this.swayables) s.rotation.z = Math.sin(now * 1.6 + s.position.x * 0.7 + s.position.z * 0.5) * 0.12;
@@ -424,7 +435,23 @@ export class OverworldScreen3D {
     this.composer.setSize(window.innerWidth, window.innerHeight);
   }
 
+  private handleKeyDown(e: KeyboardEvent) {
+    if (this.renderer.domElement.style.display === 'none') return; // Guard against meta-screens
+    const map: Record<string, 'up' | 'down' | 'left' | 'right'> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
+    const dir = map[e.key];
+    if (dir) { e.preventDefault(); this.facing = dir; this.bob = 1; this.onMove(dir); }
+  }
+
+  private handleResize() {
+    this.resize();
+  }
+
   show() { this.renderer.domElement.style.display = 'block'; this.topbar.style.display = 'block'; }
   hide() { this.renderer.domElement.style.display = 'none'; this.topbar.style.display = 'none'; this.msgbar.style.display = 'none'; }
-  dispose() { this.running = false; this.renderer.domElement.remove(); this.topbar.remove(); this.msgbar.remove(); this.renderer.dispose(); }
+  dispose() { 
+    this.running = false; 
+    window.removeEventListener('keydown', this.handleKeyDown);
+    window.removeEventListener('resize', this.handleResize);
+    this.renderer.domElement.remove(); this.topbar.remove(); this.msgbar.remove(); this.renderer.dispose(); 
+  }
 }

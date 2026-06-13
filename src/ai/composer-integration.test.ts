@@ -15,7 +15,7 @@ describe('composer -> Bridge integration', () => {
     );
 
     const bridge = new BattleBridge();
-    await bridge.startBattle(steelTeam, fireTeam, { formatid: 'gen9customgame' });
+    await bridge.startBattle(steelTeam, fireTeam, { formatid: 'gen9customgame', autoResolveSwitch: true });
 
     let guard = 0;
     while (bridge.state.winner === undefined && guard++ < 300) {

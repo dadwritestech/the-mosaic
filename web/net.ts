@@ -7,5 +7,13 @@ export async function api(cmd: string, body: Record<string, unknown> = {}): Prom
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
+  if (!r.ok) {
+    try {
+      const err = await r.json();
+      throw new Error(err.message || `HTTP ${r.status}`);
+    } catch {
+      throw new Error(`HTTP ${r.status}`);
+    }
+  }
   return r.json();
 }

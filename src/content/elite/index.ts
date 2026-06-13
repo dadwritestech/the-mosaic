@@ -32,7 +32,7 @@ const FERRUM: SeqOpponent = {
   name: 'Ferrum',
   team: [
     mon('Corviknight', 'Corviknight', 'Pressure', 'Assault Vest',
-      ['brave-bird', 'steel-wing', 'roost', 'uturn'], 'Jolly', attk, 58),
+      ['brave-bird', 'steel-wing', 'iron-head', 'u-turn'], 'Jolly', attk, 58),
     mon('Bronzong', 'Bronzong', 'Levitate', 'Leftovers',
       ['heavy-slam', 'earthquake', 'hypnosis', 'stealth-rock'], 'Sassy', bulk, 59),
     mon('Heatran', 'Heatran', 'Flash Fire', 'Leftovers',
@@ -54,13 +54,13 @@ const LUMINA: SeqOpponent = {
   team: [
     mon('Sylveon', 'Sylveon', 'Pixilate', 'Life Orb',
       ['moonblast', 'psyshock', 'hyper-voice', 'encore'], 'Timid', sAtk, 58),
-    mon('Gardevoir', 'Gardevoir', 'Pixilate', 'Focus Sash',
+    mon('Gardevoir', 'Gardevoir', 'Trace', 'Focus Sash',
       ['moonblast', 'psychic', 'shadow-ball', 'calm-mind'], 'Timid', sAtk, 59),
     mon('Clefable', 'Clefable', 'Magic Guard', 'Leftovers',
       ['moonblast', 'soft-boiled', 'light-screen', 'reflect'], 'Calm', bulk, 59),
     mon('Togekiss', 'Togekiss', 'Serene Grace', 'Leftovers',
       ['dazzling-gleam', 'aura-sphere', 'roost', 'wish'], 'Calm', bulk, 60),
-    mon('Florges', 'Florges', 'Own Tempo', 'Life Orb',
+    mon('Florges', 'Florges', 'Flower Veil', 'Life Orb',
       ['drain-punch', 'play-rough', 'giga-drain', 'aromatherapy'], 'Jolly', attk, 60),
   ],
 };
@@ -94,16 +94,16 @@ const KAIROS: SeqOpponent = {
   id: 'kairos',
   name: 'Kairos',
   team: [
-    mon('Lucario', 'Lucario', 'Adaptability', 'Life Orb',
+    mon('Lucario', 'Lucario', 'Inner Focus', 'Life Orb',
       ['close-combat', 'aura-sphere', 'extreme-speed', 'bulk-up'], 'Jolly', attk, 59),
     mon('Conkeldurr', 'Conkeldurr', 'Iron Fist', 'Life Orb',
       ['drain-punch', 'hammer-arm', 'superpower', 'ice-punch'], 'Jolly', attk, 60),
     mon('Hariyama', 'Hariyama', 'Guts', 'Life Orb',
       ['close-combat', 'hammer-arm', 'superpower', 'bulk-up'], 'Jolly', attk, 58),
     mon('Breloom', 'Breloom', 'Technician', 'Life Orb',
-      ['macaroni', 'bullet-seed', 'stone-edge', 'spore'], 'Jolly', attk, 60),
-    mon('Incineroar', 'Incineroar', 'Blaze', 'Assault Vest',
-      ['flamethrower', 'dash', 'superpower', 'bulk-up'], 'Impish', bulk, 61),
+      ['mach-punch', 'bullet-seed', 'stone-edge', 'spore'], 'Jolly', attk, 60),
+    mon('Incineroar', 'Incineroar', 'Intimidate', 'Assault Vest',
+      ['flamethrower', 'darkest-lariat', 'superpower', 'knock-off'], 'Impish', bulk, 61),
   ],
 };
 

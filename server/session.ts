@@ -127,6 +127,17 @@ class GameSession {
     this.enterLocation(id);
     return this.view();
   }
+  sidebarData() {
+    return {
+      party: this.state.party.map((p) => ({ species: p.species, level: p.level, hpPercent: Math.round((p.currentHp / maxHp(p)) * 100), status: p.status })),
+      locationId: this.locationId,
+      time: timeOfDay(this.state),
+      money: this.state.money,
+      badges: this.state.badges.length,
+      dexSeen: this.state.pokedex.seen.size,
+      dexCaught: this.state.pokedex.caught.size,
+    };
+  }
 
   view() {
     if (this.battle) return this.battleView();
@@ -137,6 +148,7 @@ class GameSession {
         player: { x: this.px, y: this.py }, time: timeOfDay(this.state),
         party: this.state.party.map((p) => ({ species: p.species, level: p.level, hpPercent: Math.round((p.currentHp / maxHp(p)) * 100) })),
         badges: this.state.badges, money: this.state.money, message: this.message, overlay: this.overlay,
+        sidebar: this.sidebarData(),
       };
     }
     const m = this.map();
@@ -146,6 +158,7 @@ class GameSession {
       party: this.state.party.map((p) => ({ species: p.species, level: p.level, hpPercent: Math.round((p.currentHp / maxHp(p)) * 100) })),
       badges: this.state.badges, money: this.state.money, message: this.message,
       overlay: this.overlay,
+      sidebar: this.sidebarData(),
     };
   }
 
@@ -364,8 +377,13 @@ class GameSession {
     return this.view();
   }
 
+  private prepareSave() {
+    this.state.location = { mapId: this.locationId, x: this.px, y: this.py, atPokemonCenter: false };
+    return serialize(this.state);
+  }
+
   async save(slot = 'slot1') {
-    await this.saves.save(slot, serialize(this.state));
+    await this.saves.save(slot, this.prepareSave());
     this.message = `Game saved to ${slot}.`;
     this.overlay = null;
     return this.view();
@@ -375,14 +393,24 @@ class GameSession {
     if (!json) { this.message = `No save in ${slot}.`; return this.view(); }
     this.state = validateAndRepair(deserialize(json));
     this.message = `Loaded ${slot}.`;
-    this.overlay = null;
+    this.applyLoadedTransientState();
     return this.view();
+  }
+
+  private applyLoadedTransientState() {
+    this.overlay = null;
+    if (this.battle) { this.battle.bridge.destroy(); this.battle = null; }
+    this.locationId = this.state.location.mapId;
+    this.px = this.state.location.x;
+    this.py = this.state.location.y;
+    this.boxIndex = 0;
   }
 
   private playerTeam(): PokemonSet[] { return this.state.party.map((p) => ownedToSet(p)); }
   private activeMon() { return this.state.party[this.battle?.activeIdx ?? 0]; }
 
   private async startWild(species: string, level: number) {
+    if (this.state.party.length === 0) { this.message = 'You have no Pokémon to battle with!'; return this.view(); }
     const wild = createOwned({ species, level, moves: wildMoveset(species, level) });
     this.state = registerSeen(this.state, this.dexNum(species));
     const bridge = new BattleBridge();
@@ -391,6 +419,7 @@ class GameSession {
     return this.battleView();
   }
   private async startGym(gymId: string) {
+    if (this.state.party.length === 0) { this.message = 'You have no Pokémon to battle with!'; return this.view(); }
     const gym = getGym(gymId);
     const team = composeTeam(gym.trainer, { gen: 9, counterDraftStrength: 0.3, rng: makeRng(7) });
     for (const s of team) this.state = registerSeen(this.state, this.dexNum(s.species));
@@ -414,6 +443,7 @@ class GameSession {
   }
 
   private async startWarden(riftId: string) {
+    if (this.state.party.length === 0) { this.message = 'You have no Pokémon to battle with!'; return this.view(); }
     const rift = getRift(riftId); if (!rift) return this.view();
     const w = rift.warden;
     const team = composeTeam(w, { gen: 9, counterDraftStrength: 0.4, rng: makeRng(riftId.length * 31 + 5) });
@@ -472,13 +502,13 @@ class GameSession {
     const dex = (Sim.Dex as any).forGen(9);
     const active = this.activeMon();
     const a1 = s.active.p1, a2 = s.active.p2;
-    const foeSp = dex.species.get(a2.species);
+    const foeSp = a2 ? dex.species.get(a2.species) : { name: 'Unknown', types: ['Normal'], heightm: 1 };
 
     // Rich SELF view (your active mon — full stats/types/ability/item).
     let abilityDesc = ''; try { abilityDesc = dex.abilities.get(active.ability).shortDesc ?? ''; } catch { /* */ }
     let heldItem = '', itemDesc = '';
     if (active.heldItem) { try { const it = getItem(active.heldItem); heldItem = it.name; } catch { heldItem = active.heldItem; } }
-    const self = {
+    const self = a1 ? {
       species: a1.species, num: this.dexNum(a1.species), level: active.level, gender: active.gender ?? 'N',
       heightm: dex.species.get(a1.species).heightm ?? 1,
       // hp derives from the LIVE battle percent (persisted party HP only updates at battle end)
@@ -486,18 +516,27 @@ class GameSession {
       status: a1.status, boosts: a1.boosts ?? {}, volatiles: a1.volatiles ?? [],
       types: dex.species.get(a1.species).types as string[], ability: active.ability, abilityDesc,
       nature: active.nature, heldItem, itemDesc, stats: computeStats(active),
+    } : {
+      species: active.species, num: this.dexNum(active.species), level: active.level, gender: active.gender ?? 'N', heightm: 1,
+      hpPercent: 0, hp: 0, maxHp: maxHp(active), status: '', boosts: {}, volatiles: [], types: ['Normal'], ability: active.ability, abilityDesc, nature: active.nature, heldItem, itemDesc, stats: computeStats(active),
     };
     // Lighter FOE view (species/types/level + battle state).
-    const foeSet = b.oppTeam.find((st) => dex.species.get(st.species).name === foeSp.name);
-    const foe = {
+    const foeSet = a2 ? b.oppTeam.find((st) => dex.species.get(st.species).name === foeSp.name) : null;
+    const foe = a2 ? {
       species: a2.species, num: this.dexNum(a2.species), hpPercent: a2.hpPercent,
       heightm: foeSp.heightm ?? 1,
       status: a2.status, boosts: a2.boosts ?? {}, volatiles: a2.volatiles ?? [],
       types: foeSp.types as string[], level: foeSet?.level ?? active.level,
+    } : {
+      species: 'Unknown', num: 0, hpPercent: 0, heightm: 1, status: '', boosts: {}, volatiles: [], types: ['Normal'], level: 1,
     };
 
+    const fc = b.bridge.finalConditions().p1;
     const switches = this.state.party
-      .map((p, i) => ({ index: i + 1, species: p.species, num: this.dexNum(p.species), level: p.level, hpPercent: Math.round((p.currentHp / maxHp(p)) * 100), status: p.status ?? '', fainted: p.currentHp <= 0 }))
+      .map((p, i) => {
+        const hpPct = fc[i]?.hpPercent ?? Math.round((p.currentHp / maxHp(p)) * 100);
+        return { index: i + 1, species: p.species, num: this.dexNum(p.species), level: p.level, hpPercent: hpPct, status: fc[i]?.status ?? (p.status ?? ''), fainted: hpPct <= 0 };
+      })
       .filter((_, i) => i !== b.activeIdx);
     const balls = Object.entries(BALL_ITEM)
       .map(([ballType, itemId]) => ({ ballType, name: getItem(itemId).name, count: this.state.bag.balls?.[itemId] ?? 0 }))
@@ -520,6 +559,7 @@ class GameSession {
       canCatch: c.canCatch, log: b.log,
       ended: b.ended ?? null,
       done: s.winner !== undefined ? (s.winner === 'p1' ? 'win' : 'loss') : null,
+      sidebar: this.sidebarData(),
     };
   }
 
@@ -591,7 +631,9 @@ class GameSession {
     const b = this.battle; if (!b) return this.view();
     const target = this.state.party[index - 1];
     if (index - 1 === b.activeIdx || !target) return this.battleView();
-    if (target.currentHp <= 0) { b.log = `${target.species} has no energy left to battle!`; return this.battleView(); }
+    const fc = b.bridge.finalConditions().p1;
+    const hpPct = fc[index - 1]?.hpPercent ?? Math.round((target.currentHp / maxHp(target)) * 100);
+    if (hpPct <= 0) { b.log = `${target.species} has no energy left to battle!`; return this.battleView(); }
     await this.resolve({ kind: 'switch', index });
     b.activeIdx = index - 1; b.participants.add(target.uid);
     if (b.bridge.state.winner) return this.finish();
@@ -613,25 +655,26 @@ class GameSession {
     return this.battleView();
   }
 
-  // Use a healing/cure item on the active mon mid-battle. (v1: does not consume the
-  // turn — Showdown has no "skip" action; a turn-cost variant is a later refinement.)
-  async useItemBattle(itemId: string) {
+  // Use a healing/cure/revive item on a party mon mid-battle.
+  async useItemBattle(itemId: string, targetUid?: string) {
     const b = this.battle; if (!b) return this.view();
     let def; try { def = getItem(itemId); } catch { return this.battleView(); }
-    // Sync the LIVE battle HP/status onto the party mon first — applyItem judges
-    // "already full"/"no status" against the stored mon, which is stale mid-battle.
-    const live = b.bridge.state.active.p1;
-    if (live) {
-      const cur = this.activeMon();
-      const liveHp = Math.max(0, Math.round((live.hpPercent / 100) * maxHp(cur)));
-      this.state = { ...this.state, party: this.state.party.map((p, i) => (i === b.activeIdx ? { ...setHp(p, liveHp), status: live.status || '' } : p)) };
-    }
-    const mon = this.activeMon();
+    // Sync the LIVE battle HP/status onto all party mons first so applyItem logic is sound
+    const fc = b.bridge.finalConditions().p1;
+    this.writeBackParty(fc);
+
+    const mon = targetUid ? this.state.party.find((p) => p.uid === targetUid) : this.activeMon();
+    if (!mon) return this.battleView();
+
     const { state, result } = applyItem(this.state, itemId, mon.uid);
     if (!result.ok) { b.log = `Can't use ${def.name}: ${result.reason}.`; return this.battleView(); }
     this.state = this.consume(state, def.pocket, itemId);
-    const healed = this.activeMon();
-    b.bridge.setActiveHp('p1', Math.round((healed.currentHp / maxHp(healed)) * 100), def.effect.kind === 'cure');
+    
+    const healed = this.state.party.find((p) => p.uid === mon.uid)!;
+    // If we healed the currently active mon, push the new HP to the engine immediately
+    if (mon.uid === this.activeMon().uid) {
+      b.bridge.setActiveHp('p1', Math.round((healed.currentHp / maxHp(healed)) * 100), def.effect.kind === 'cure');
+    }
     b.log = `You used ${def.name} on ${healed.species}!`;
     return this.battleView();
   }
@@ -709,7 +752,7 @@ class GameSession {
 
   // Autosave to a dedicated slot so the player can close the tab anytime and
   // resume via the title's Continue. Fire-and-forget; called at safe checkpoints.
-  private autosave() { void this.saves.save('auto', serialize(this.state)); }
+  private autosave() { void this.saves.save('auto', this.prepareSave()); }
 
   // Dismiss the end-of-battle result screen and return to the overworld.
   battleContinue() {
@@ -758,6 +801,7 @@ class GameSession {
       })),
       dexSeen: this.state.pokedex.seen.size,
       dexCaught: this.state.pokedex.caught.size,
+      sidebar: this.sidebarData(),
     };
   }
 
@@ -797,6 +841,7 @@ class GameSession {
       entries,
       seenCount: this.state.pokedex.seen.size,
       caughtCount: this.state.pokedex.caught.size,
+      sidebar: this.sidebarData(),
     };
   }
 
@@ -853,6 +898,7 @@ class GameSession {
       }));
     return {
       screen: 'shop' as const, name: shop.name, stock: buy, sellItems: sell, money: this.state.money,
+      sidebar: this.sidebarData(),
     };
   }
 
@@ -926,8 +972,7 @@ export async function dispatch(cmd: string, body: any) {
         singleton = new GameSession();
         singleton.state = validateAndRepair(deserialize(r.__load));
         singleton.message = 'Game loaded.';
-        singleton.overlay = null;
-        singleton.battle = null;
+        (singleton as any).applyLoadedTransientState();
         return singleton.view();
       }
       return r;

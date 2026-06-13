@@ -27,6 +27,7 @@ describe('game state containers', () => {
     let g = createNewGame({ difficultyMode: 'normal', nuzlocke: false });
     const mon = createOwned({ species: 'Snorlax', level: 20 });
     g = addToParty(g, mon);
+    g = addToParty(g, createOwned({ species: 'Pikachu', level: 5 })); // keep party > 1 so the last-member guard allows the deposit
     g = depositToBox(g, mon.uid);
     expect(g.party.find((m) => m.uid === mon.uid)).toBeUndefined();
     g = withdrawFromBox(g, mon.uid);

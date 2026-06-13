@@ -133,11 +133,12 @@ export class OptionsScreen {
     );
     toggle.appendChild(knob);
 
+    let currentState = checked;
     toggle.addEventListener('click', () => {
-      const newVal = !checked;
-      toggle.style.background = newVal ? '#3b82f6' : '#374151';
-      knob.style.left = newVal ? '22px' : '2px';
-      onChange(newVal);
+      currentState = !currentState;
+      toggle.style.background = currentState ? '#3b82f6' : '#374151';
+      knob.style.left = currentState ? '22px' : '2px';
+      onChange(currentState);
     });
     row.appendChild(toggle);
     return row;

@@ -56,6 +56,15 @@ export class BattleScreen {
       onSwitch: (i) => this.onAction('switchMon', { index: i }),
       onBall: (ball) => this.onAction('catch', { ball }),
     });
+
+    this.handleResize = this.handleResize.bind(this);
+    window.addEventListener('resize', this.handleResize);
+  }
+
+  private handleResize() {
+    this.camera.aspect = window.innerWidth / window.innerHeight;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
   }
 
   private readonly SELF_POS = { x: -2.2, z: 1.0 };
@@ -87,10 +96,21 @@ export class BattleScreen {
     return Math.atan2(to.x - from.x, to.z - from.z);
   }
 
+  private disposeObj(obj: THREE.Object3D) {
+    this.scene.remove(obj);
+    obj.traverse((child: any) => {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) {
+        if (Array.isArray(child.material)) child.material.forEach((m: any) => m.dispose());
+        else child.material.dispose();
+      }
+    });
+  }
+
   async render(view: View) {
     if (view.self.species !== this.selfKey) {
       this.selfKey = view.self.species;
-      if (this.selfObj) this.scene.remove(this.selfObj);
+      if (this.selfObj) this.disposeObj(this.selfObj);
       const f = await this.loadFighter(view.self.num, view.self.species, 'self', view.self.heightm ?? 1);
       this.selfObj = f.obj; this.selfMixer = f.mixer;
       this.selfObj.position.x = this.SELF_POS.x; this.selfObj.position.z = this.SELF_POS.z;
@@ -99,7 +119,7 @@ export class BattleScreen {
     }
     if (view.foe.species !== this.foeKey) {
       this.foeKey = view.foe.species;
-      if (this.foeObj) this.scene.remove(this.foeObj);
+      if (this.foeObj) this.disposeObj(this.foeObj);
       const f = await this.loadFighter(view.foe.num, view.foe.species, 'foe', view.foe.heightm ?? 1);
       this.foeObj = f.obj; this.foeMixer = f.mixer;
       this.foeObj.position.x = this.FOE_POS.x; this.foeObj.position.z = this.FOE_POS.z;
@@ -152,7 +172,13 @@ export class BattleScreen {
     this.host.appendChild(overlay);
     this.endedEl = overlay;
     // Enter / Space also continues (fast pick-up-and-play)
-    this.endKey = (e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this.onAction('battleContinue'); } };
+    this.endKey = (e: KeyboardEvent) => { 
+      if (e.key === 'Enter' || e.key === ' ') { 
+        e.preventDefault(); 
+        if (this.endKey) { window.removeEventListener('keydown', this.endKey); this.endKey = null; }
+        this.onAction('battleContinue'); 
+      } 
+    };
     window.addEventListener('keydown', this.endKey);
   }
 
@@ -176,5 +202,14 @@ export class BattleScreen {
     this.renderer.render(this.scene, this.camera);
   };
 
-  dispose() { this.running = false; this.clearEnded(); this.hud.clear(); this.renderer.domElement.remove(); this.renderer.dispose(); }
+  dispose() { 
+    this.running = false; 
+    this.clearEnded(); 
+    this.hud.clear(); 
+    if (this.selfMixer) this.selfMixer.stopAllAction();
+    if (this.foeMixer) this.foeMixer.stopAllAction();
+    window.removeEventListener('resize', this.handleResize);
+    this.renderer.domElement.remove(); 
+    this.renderer.dispose(); 
+  }
 }

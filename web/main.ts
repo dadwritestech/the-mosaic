@@ -2,6 +2,7 @@ import { api } from './net';
 import { OverworldScreen3D } from './overworld/overworld3d';
 import { BattleScreen } from './battle/battle-screen';
 import { Menu } from './ui/menu';
+import { Sidebar } from './ui/sidebar';
 import { TitleScreen } from './screens/title';
 import { OptionsScreen } from './screens/options';
 import { TrainerCardScreen } from './screens/trainercard';
@@ -14,6 +15,7 @@ const root = document.getElementById('game')!;
 let battle: BattleScreen | null = null;
 let busy = false;
 let lastBaseView: any = null;  // remembers the screen behind Options overlay
+let currentScreen = 'title';
 
 /* ---- lazy-constructed meta-screens ---- */
 let titleScreen: TitleScreen | null = null;
@@ -38,10 +40,11 @@ async function send(cmd: string, body: Record<string, unknown> = {}) {
 
 const overworld = new OverworldScreen3D(root, (dir) => send('move', { dir }));
 const menu = new Menu(root, (cmd, body) => send(cmd, body));
+const sidebar = new Sidebar(root);
 
 // M opens the pause menu, Escape closes it (overworld only).
 window.addEventListener('keydown', (e) => {
-  if (battle) return;
+  if (currentScreen !== 'overworld') return;
   if (e.key === 'm' || e.key === 'M') send('menu', { which: 'pause' });
   else if (e.key === 'Escape') send('closeMenu');
   else if (e.key === 'c' || e.key === 'C') send('trainerCard');
@@ -68,6 +71,12 @@ function hideMetaScreens(): void {
 }
 
 function render(view: any) {
+  currentScreen = view.screen;
+  
+  if (view.sidebar) {
+    sidebar.render(view.sidebar);
+  }
+
   /* Remember the base view so closeOptions can return to it. */
   if (view.screen !== 'options') { lastBaseView = view; }
 

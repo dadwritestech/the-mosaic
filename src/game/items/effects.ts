@@ -39,7 +39,7 @@ export function applyItem(state: GameState, itemId: string, targetUid?: string, 
       }
       case 'cure': {
         if (!mon.status) return { mon, result: { ok: false, reason: 'no status' } };
-        if (e.status !== 'all' && mon.status !== e.status) return { mon, result: { ok: false, reason: 'status mismatch' } };
+        if (e.status !== 'all' && mon.status !== e.status && !(e.status === 'psn' && mon.status === 'tox')) return { mon, result: { ok: false, reason: 'status mismatch' } };
         return { mon: { ...mon, status: '' }, result: { ok: true } };
       }
       case 'revive': {
