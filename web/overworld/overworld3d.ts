@@ -5,11 +5,12 @@ import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { makeTree, makePineTree, makeGrassTuft, makeFlower, makeBush, makeRock } from './props';
-import { loadKit, loadCharacter } from '../battle/creature';
+import { loadKit, loadKayCharacter } from '../battle/creature';
 import type { View } from '../net';
 
-// CC0 Quaternius low-poly characters (web/public/kit/characters)
-const PLAYER_MODEL = '/kit/characters/char-animated.glb';      // rigged: Idle/Walk/Run
+// CC0 characters: player is an animated KayKit Knight (shared-rig clips);
+// townsfolk + Warden reuse the Quaternius static models for now.
+const PLAYER_MODEL = '/kit/adventurers/Knight.glb';
 const WARDEN_MODEL = '/kit/characters/soldier.glb';            // armed sentinel guarding the rift
 const NPC_MODELS = ['/kit/characters/man.glb', '/kit/characters/adventurer.glb']; // townsfolk
 
@@ -150,10 +151,10 @@ export class OverworldScreen3D {
   // Swap the procedural placeholder player for the rigged Quaternius model.
   private async loadPlayerModel() {
     try {
-      const c = await loadCharacter(PLAYER_MODEL, 1.6);
+      const c = await loadKayCharacter(PLAYER_MODEL, 1.7);
       this.player.clear();
       this.player.add(c.root);
-      this.playerMixer = c.mixer; this.playerPlay = c.play; c.play('Idle');
+      this.playerMixer = c.mixer; this.playerPlay = c.play; c.play('Idle_A');
     } catch { /* keep the procedural fallback */ }
   }
   private async cacheKit(path: string, h: number) {
@@ -371,7 +372,7 @@ export class OverworldScreen3D {
     const faceAngle = { down: 0, up: Math.PI, left: Math.PI / 2, right: -Math.PI / 2 }[this.facing];
     this.player.rotation.y += (faceAngle - this.player.rotation.y) * 0.3;
     if (this.playerPlay) {
-      this.playerPlay(this.bob > 0.15 ? 'Walk' : 'Idle'); // rigged model: clip-based
+      this.playerPlay(this.bob > 0.15 ? 'Walking_A' : 'Idle_A'); // rigged model: clip-based
     } else if (this.legL && this.legR && this.armL && this.armR) {
       // procedural fallback walk cycle
       const swing = Math.sin(performance.now() / 80) * Math.min(this.bob, 1) * 0.7;

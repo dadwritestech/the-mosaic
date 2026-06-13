@@ -17,3 +17,8 @@ sprites-master/
 # Essentials import working dirs
 .essentials/
 web/public/2d/tilesets/
+
+# extracted CC0 asset source packs (only used GLBs are copied into web/public/kit)
+.assets-src/
+/kenney_*
+/KayKit_*

@@ -50,6 +50,44 @@ export async function loadModel(dexNum: number, targetHeight = 1.5): Promise<Loa
 
 export interface LoadedChar { root: THREE.Object3D; mixer: THREE.AnimationMixer; play: (name: string) => void; }
 
+// KayKit characters carry no clips — animations live in shared Rig_Medium files.
+// Load them once and reuse across every character (same skeleton bone names).
+let _kayClips: Promise<Map<string, THREE.AnimationClip>> | null = null;
+function kayClips(): Promise<Map<string, THREE.AnimationClip>> {
+  if (_kayClips) return _kayClips;
+  _kayClips = (async () => {
+    const m = new Map<string, THREE.AnimationClip>();
+    for (const p of ['/kit/adventurers/Rig_Medium_General.glb', '/kit/adventurers/Rig_Medium_MovementBasic.glb']) {
+      const g = await gltfLoader().loadAsync(p);
+      for (const c of g.animations) m.set(c.name, c);
+    }
+    return m;
+  })();
+  return _kayClips;
+}
+
+// Load a KayKit Adventurers character (skinned, embedded texture) and bind the
+// shared animation clips to it, normalized to targetHeight and grounded.
+export async function loadKayCharacter(path: string, targetHeight = 1.7): Promise<LoadedChar> {
+  const [gltf, clips] = await Promise.all([gltfLoader().loadAsync(path), kayClips()]);
+  const root = gltf.scene;
+  root.traverse((o: any) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  const size = new THREE.Vector3(); new THREE.Box3().setFromObject(root).getSize(size);
+  root.scale.setScalar(targetHeight / Math.max(size.y, 0.001));
+  const grounded = new THREE.Box3().setFromObject(root); root.position.y -= grounded.min.y;
+  const mixer = new THREE.AnimationMixer(root);
+  let current = '';
+  const play = (name: string) => {
+    if (name === current) return;
+    const clip = clips.get(name) ?? clips.get('Idle_A');
+    if (!clip) return;
+    mixer.stopAllAction();
+    mixer.clipAction(clip).reset().fadeIn(0.2).play();
+    current = name;
+  };
+  return { root, mixer, play };
+}
+
 // Load a rigged character GLB (e.g. Quaternius), normalized to targetHeight and
 // grounded, exposing a `play(clipName)` that cross-switches animations by name
 // (matches 'Walk'/'Idle' regardless of the 'Armature|Walk' prefix). Static models
