@@ -89,6 +89,15 @@ class GameSession {
   }
   private map(): TileMap { return SLICE_MAPS[this.locationId] ?? ZONE_MAPS[this.locationId]; }
 
+  /** Tile grid for the client, with Warden NPC cells marked 'warden' so the 3D
+   *  overworld can render them distinctly from ordinary villagers. */
+  private tilesForView(m: TileMap): string[][] {
+    return m.tiles.map((row, y) => row.map((t, x) => {
+      if (t === 'npc' && m.meta?.[`${x},${y}`]?.npcId?.startsWith('warden:')) return 'warden';
+      return t as string;
+    }));
+  }
+
   /** Wild-encounter table for the current location: rift zones use their rift's
    *  fused table; legacy slice maps use their region location's table. */
   private zoneEncounterTable() {
@@ -132,7 +141,7 @@ class GameSession {
     }
     const m = this.map();
     return {
-      screen: 'overworld' as const, locationId: this.locationId, tiles: m.tiles,
+      screen: 'overworld' as const, locationId: this.locationId, tiles: this.tilesForView(m),
       player: { x: this.px, y: this.py }, time: timeOfDay(this.state),
       party: this.state.party.map((p) => ({ species: p.species, level: p.level, hpPercent: Math.round((p.currentHp / maxHp(p)) * 100) })),
       badges: this.state.badges, money: this.state.money, message: this.message,

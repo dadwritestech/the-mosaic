@@ -5,8 +5,13 @@ import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { makeTree, makePineTree, makeGrassTuft, makeFlower, makeBush, makeRock } from './props';
-import { loadKit } from '../battle/creature';
+import { loadKit, loadCharacter } from '../battle/creature';
 import type { View } from '../net';
+
+// CC0 Quaternius low-poly characters (web/public/kit/characters)
+const PLAYER_MODEL = '/kit/characters/char-animated.glb';      // rigged: Idle/Walk/Run
+const WARDEN_MODEL = '/kit/characters/soldier.glb';            // armed sentinel guarding the rift
+const NPC_MODELS = ['/kit/characters/man.glb', '/kit/characters/adventurer.glb']; // townsfolk
 
 // 3D overworld in the Let's Go spirit: a grassy field under a tilted 3/4 camera,
 // 3D buildings/trees, a follow-cam, soft shadows, and Pokémon roaming the field.
@@ -35,7 +40,9 @@ export class OverworldScreen3D {
   private facing: 'up' | 'down' | 'left' | 'right' = 'down';
 
   private player = new THREE.Group();
-  private legL!: THREE.Mesh; private legR!: THREE.Mesh; private armL!: THREE.Mesh; private armR!: THREE.Mesh;
+  private legL?: THREE.Mesh; private legR?: THREE.Mesh; private armL?: THREE.Mesh; private armR?: THREE.Mesh;
+  private playerMixer: THREE.AnimationMixer | null = null;
+  private playerPlay: ((name: string) => void) | null = null;
   private pvis = { x: 0, z: 0 };          // smoothed player world position
   private cam = new THREE.Vector3();
   private bob = 0;
@@ -128,13 +135,26 @@ export class OverworldScreen3D {
     this.preloadKit();
   }
 
-  // Preload tree/rock models once; re-place the current area when ready.
+  // Preload tree/rock/character models once; re-place the current area when ready.
   private async preloadKit() {
+    this.loadPlayerModel();
     await Promise.all([
       ...this.TREES.map((p) => this.cacheKit(p, 2.0)),
       ...this.ROCKS.map((p) => this.cacheKit(p, 0.6)),
+      ...NPC_MODELS.map((p) => this.cacheKit(p, 1.5)),
+      this.cacheKit(WARDEN_MODEL, 1.6),
     ]);
     if (this.view) this.rebuildTiles(this.view);
+  }
+
+  // Swap the procedural placeholder player for the rigged Quaternius model.
+  private async loadPlayerModel() {
+    try {
+      const c = await loadCharacter(PLAYER_MODEL, 1.6);
+      this.player.clear();
+      this.player.add(c.root);
+      this.playerMixer = c.mixer; this.playerPlay = c.play; c.play('Idle');
+    } catch { /* keep the procedural fallback */ }
   }
   private async cacheKit(path: string, h: number) {
     if (this.kitCache.has(path)) return;
@@ -223,11 +243,13 @@ export class OverworldScreen3D {
 
   // a couple of villagers wandering the open ground near the path
   private spawnVillagers() {
+    // wandering townsfolk belong in towns, not out on the dangerous rift routes
+    if (this.builtLocation.startsWith('rift-') || this.builtLocation === 'world-core') return;
     const colors = [0x4a7fd6, 0xd66a9a, 0x6abf6a, 0xc8923a];
     const cx = this.mapW / 2, cz = this.mapH / 2;
     const n = 3;
     for (let k = 0; k < n; k++) {
-      const obj = this.character(colors[k % colors.length]);
+      const obj = this.kitClone(NPC_MODELS[k % NPC_MODELS.length]) ?? this.character(colors[k % colors.length]);
       const x = cx + (Math.random() - 0.5) * (this.mapW - 6), z = cz + (Math.random() - 0.5) * (this.mapH - 6);
       obj.position.set(x, 0, z); this.tileGroup.add(obj);
       this.villagers.push({ obj, x, z, tx: x, tz: z, spd: 0.25 + Math.random() * 0.2 });
@@ -263,7 +285,12 @@ export class OverworldScreen3D {
         else if (t === 'center') { this.placeKit('building_C', x, y, 2.6); continue; }
         else if (t === 'shop') { this.placeKit('building_B', x, y, 2.4); continue; }
         else if (t === 'gym') { this.placeKit('building_G', x, y, 3.0); continue; }
-        else if (t === 'npc') obj = this.character(0x5a8fd6);
+        else if (t === 'npc') obj = this.kitClone(NPC_MODELS[seed % NPC_MODELS.length]) ?? this.character(0x5a8fd6);
+        else if (t === 'warden') {
+          const w = this.kitClone(WARDEN_MODEL);
+          if (w) { w.scale.multiplyScalar(1.4); w.rotation.y = -Math.PI / 2; obj = w; } // bigger, faces the approaching player
+          else obj = this.character(0xc0392b);
+        }
         else if (t === 'floor' || t === 'exit') {
           const path = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.06, 0.98), new THREE.MeshStandardMaterial({ color: t === 'exit' ? '#e6cf86' : '#d9c28c' }));
           path.position.set(x, 0.0, y); path.receiveShadow = true; this.tileGroup.add(path); continue;
@@ -339,13 +366,18 @@ export class OverworldScreen3D {
     this.pvis.x += (p.x - this.pvis.x) * 0.2;
     this.pvis.z += (p.y - this.pvis.z) * 0.2;
     this.bob *= 0.85;
-    this.player.position.set(this.pvis.x, Math.abs(Math.sin(performance.now() / 90)) * this.bob * 0.1, this.pvis.z);
+    const bobY = this.playerMixer ? 0 : Math.abs(Math.sin(performance.now() / 90)) * this.bob * 0.1;
+    this.player.position.set(this.pvis.x, bobY, this.pvis.z);
     const faceAngle = { down: 0, up: Math.PI, left: Math.PI / 2, right: -Math.PI / 2 }[this.facing];
     this.player.rotation.y += (faceAngle - this.player.rotation.y) * 0.3;
-    // walk cycle: swing limbs while a step is in progress (bob decays after each step)
-    const swing = Math.sin(performance.now() / 80) * Math.min(this.bob, 1) * 0.7;
-    this.legL.rotation.x = swing; this.legR.rotation.x = -swing;
-    this.armL.rotation.x = -swing * 0.8; this.armR.rotation.x = swing * 0.8;
+    if (this.playerPlay) {
+      this.playerPlay(this.bob > 0.15 ? 'Walk' : 'Idle'); // rigged model: clip-based
+    } else if (this.legL && this.legR && this.armL && this.armR) {
+      // procedural fallback walk cycle
+      const swing = Math.sin(performance.now() / 80) * Math.min(this.bob, 1) * 0.7;
+      this.legL.rotation.x = swing; this.legR.rotation.x = -swing;
+      this.armL.rotation.x = -swing * 0.8; this.armR.rotation.x = swing * 0.8;
+    }
 
     // follow camera (tilted 3/4, Let's Go-ish)
     const target = new THREE.Vector3(this.pvis.x, 0.7, this.pvis.z);
@@ -356,6 +388,7 @@ export class OverworldScreen3D {
 
     const now = performance.now() / 1000;
     const dt = Math.min(0.05, now - this.lastT / 1000); this.lastT = performance.now();
+    this.playerMixer?.update(dt);
 
     // grass sway — gentle wind, phase offset by position
     for (const s of this.swayables) s.rotation.z = Math.sin(now * 1.6 + s.position.x * 0.7 + s.position.z * 0.5) * 0.12;

@@ -48,6 +48,34 @@ export async function loadModel(dexNum: number, targetHeight = 1.5): Promise<Loa
   return { root, mixer };
 }
 
+export interface LoadedChar { root: THREE.Object3D; mixer: THREE.AnimationMixer; play: (name: string) => void; }
+
+// Load a rigged character GLB (e.g. Quaternius), normalized to targetHeight and
+// grounded, exposing a `play(clipName)` that cross-switches animations by name
+// (matches 'Walk'/'Idle' regardless of the 'Armature|Walk' prefix). Static models
+// (no clips) return a no-op play.
+export async function loadCharacter(path: string, targetHeight = 1.7): Promise<LoadedChar> {
+  const gltf = await gltfLoader().loadAsync(path);
+  const root = gltf.scene;
+  root.traverse((o: any) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  const size = new THREE.Vector3(); new THREE.Box3().setFromObject(root).getSize(size);
+  root.scale.setScalar(targetHeight / Math.max(size.y, 0.001));
+  const grounded = new THREE.Box3().setFromObject(root); root.position.y -= grounded.min.y;
+  const mixer = new THREE.AnimationMixer(root);
+  const byName = new Map<string, THREE.AnimationClip>();
+  for (const c of gltf.animations) byName.set(c.name.replace(/^.*\|/, ''), c);
+  let current = '';
+  const play = (name: string) => {
+    if (name === current) return;
+    const clip = byName.get(name) ?? gltf.animations[0];
+    if (!clip) return;
+    mixer.stopAllAction();
+    mixer.clipAction(clip).reset().fadeIn(0.2).play();
+    current = name;
+  };
+  return { root, mixer, play };
+}
+
 export async function loadCreature(species: string, side: 'front' | 'back'): Promise<THREE.Sprite> {
   const tex = await new THREE.TextureLoader().loadAsync(spriteUrl(species, side));
   tex.magFilter = THREE.NearestFilter;
