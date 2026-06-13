@@ -36,6 +36,8 @@ ALL_RIFTS.forEach((rift, i) => {
     id, biome: rift.biomeA, w: 24, h: 11, spawn: { x: 1, y: 5 },
     exits: [{ x: 0, y: 5, to: prev }, { x: 23, y: 5, to: next }],
     grass: [{ x: 8, y: 4, r: 2.4 }, { x: 14, y: 6, r: 2.4 }, { x: 18, y: 4, r: 1.8 }],
+    // the rift Warden stands on the path before the exit — beat them to pass
+    npcs: [{ x: 20, y: 5, id: `warden:${rift.id}` }],
     // a Center on every other route so healing is reachable
     buildings: i % 2 === 1 ? [{ x: 4, y: 3, kind: 'center' }] : undefined,
     path: [{ x: 0, y: 5 }, { x: 23, y: 5 }],

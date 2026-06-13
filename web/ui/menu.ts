@@ -217,6 +217,17 @@ export class Menu {
         node = this.panel('Save / Load', body, [this.cancelButton('Back', () => this.send('menu', { which: 'pause' }))]);
         break;
       }
+      case 'riftChoice': {
+        const body = el('div', 'display:flex;flex-direction:column;gap:14px;max-width:440px');
+        body.appendChild(el('div', 'font-size:15px;line-height:1.55;color:#cdd9ef',
+          `You bested Warden ${o.wardenName}. The ${o.riftName} lies open before you — seal it back into a single world, or attune to the convergence?`));
+        const choices = el('div', 'display:flex;gap:12px;flex-wrap:wrap');
+        choices.appendChild(this.button('🛡 Seal — restore one world', () => this.send('chooseRift', { choice: 'seal' })));
+        choices.appendChild(this.button('🌀 Attune — embrace the merge', () => this.send('chooseRift', { choice: 'attune' }), BTN_ALT));
+        body.appendChild(choices);
+        node = this.panel('Convergence Rift', body); // no footer — the choice is required
+        break;
+      }
       default:
         node = this.panel('Menu', el('div', '', String(o.kind)), [this.cancelButton('Close', () => this.send('closeMenu'))]);
     }

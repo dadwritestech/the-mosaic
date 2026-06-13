@@ -33,6 +33,7 @@ import * as Sim from 'pokemon-showdown';
 import { SLICE_MAPS } from '../web/overworld/maps/slice';
 import { ZONE_MAPS, ZONE_RIFT, HUB_ID } from '../web/overworld/maps/zones';
 import { getRift } from '../src/content/rifts';
+import { riftStatus, sealRift, attuneRift, zoneEncounters } from '../src/game/rift-state';
 import { loadMapV2, walkableAt, warpAt, encounterAt, hasMapV2 } from '../web/overworld/maps/loader';
 import type { MapV2 } from '../web/overworld/maps/mapv2';
 import { tileAt, isWalkable, metaAt, type TileMap } from '../web/overworld/tilemap';
@@ -40,7 +41,7 @@ import { tileAt, isWalkable, metaAt, type TileMap } from '../web/overworld/tilem
 interface BattleCtx {
   bridge: BattleBridge; isWild: boolean; oppTeam: PokemonSet[];
   defeated: { species: string; level: number }[];
-  gymId?: string; log: string;
+  gymId?: string; wardenRift?: string; log: string;
   activeIdx: number;              // which party slot is currently on the field (p1)
   participants: Set<string>;      // uids that were ever active — for exp distribution
   wildMon?: OwnedPokemon;         // the catchable wild Pokémon (added to team if caught)
@@ -69,6 +70,7 @@ class GameSession {
   private saves = new FileSaveStore('.saves');
   private boxIndex = 0;                 // PC box currently being viewed
   private trainerGym: Record<string, string> = {}; // trainerId -> gymId, for Vs-Seeker rematches
+  private beatenWardens = new Set<string>();        // rift ids whose Warden is beaten but not yet Sealed/Attuned
   private visitedLocations = new Set<string>();     // location ids the player has entered
 
   constructor() {
@@ -91,7 +93,7 @@ class GameSession {
    *  fused table; legacy slice maps use their region location's table. */
   private zoneEncounterTable() {
     const riftId = ZONE_RIFT[this.locationId];
-    if (riftId) return getRift(riftId)?.fusedEncounters;
+    if (riftId) { const r = getRift(riftId); return r ? zoneEncounters(this.state, r) : undefined; }
     return getLocation(this.locationId)?.encounters;
   }
   /** The current location's imported map, or null if it's a legacy TileMap location. */
@@ -171,7 +173,10 @@ class GameSession {
     this.state = advanceStep(this.state);
     const meta = metaAt(m, nx, ny);
     if (meta.exitTo) { this.enterLocation(meta.exitTo); return this.view(); }
-    if (meta.npcId) { this.message = 'Aethel: The Core remembers every trainer who walked here.'; return this.view(); }
+    if (meta.npcId) {
+      if (meta.npcId.startsWith('warden:')) return this.wardenInteract(meta.npcId.slice(7));
+      this.message = 'Aethel: The Core remembers every trainer who walked here.'; return this.view();
+    }
     if (meta.gymId) return this.startGym(meta.gymId);
     const t = tileAt(m, nx, ny);
     if (t === 'center') { this.state = healParty(this.state); this.overlay = { kind: 'center', message: 'Welcome! Your Pokémon are now fully rested and healed.' }; return this.view(); }
@@ -384,6 +389,56 @@ class GameSession {
     await bridge.startBattle(this.playerTeam(), team, { formatid: 'gen9customgame', initialConditions: { p1: this.carryConditions() } });
     this.battle = { bridge, isWild: false, oppTeam: team, defeated: team.map((s) => ({ species: s.species, level: s.level })), gymId, log: `${gym.trainer.name} wants to battle!`, activeIdx: 0, participants: new Set([this.state.party[0].uid]) };
     return this.battleView();
+  }
+
+  // Walked into a Warden: fight it if the rift is unaddressed; if already beaten
+  // but not yet decided, re-open the Seal/Attune choice; otherwise just remark.
+  private wardenInteract(riftId: string) {
+    const rift = getRift(riftId);
+    if (!rift) return this.view();
+    if (riftStatus(this.state, riftId) === 'unsealed') {
+      if (this.beatenWardens.has(riftId)) { this.openRiftChoice(riftId); return this.view(); }
+      return this.startWarden(riftId);
+    }
+    this.message = `Warden ${rift.warden.name}: this rift is already ${riftStatus(this.state, riftId)}.`;
+    return this.view();
+  }
+
+  private async startWarden(riftId: string) {
+    const rift = getRift(riftId); if (!rift) return this.view();
+    const w = rift.warden;
+    const team = composeTeam(w, { gen: 9, counterDraftStrength: 0.4, rng: makeRng(riftId.length * 31 + 5) });
+    for (const s of team) this.state = registerSeen(this.state, this.dexNum(s.species));
+    const bridge = new BattleBridge();
+    await bridge.startBattle(this.playerTeam(), team, { formatid: 'gen9customgame', initialConditions: { p1: this.carryConditions() } });
+    this.battle = { bridge, isWild: false, oppTeam: team, defeated: team.map((s) => ({ species: s.species, level: s.level })), wardenRift: riftId, log: `Warden ${w.name} guards the ${rift.name}!`, activeIdx: 0, participants: new Set([this.state.party[0].uid]) };
+    return this.battleView();
+  }
+
+  private openRiftChoice(riftId: string) {
+    const rift = getRift(riftId)!;
+    this.overlay = { kind: 'riftChoice', riftId, riftName: rift.name, wardenName: rift.warden.name };
+  }
+
+  /** Player picks Seal (Purist) or Attune (Synthesist) after beating a Warden. */
+  chooseRift(choice: 'seal' | 'attune') {
+    const o = this.overlay;
+    if (!o || o.kind !== 'riftChoice') return this.view();
+    const rift = getRift(o.riftId);
+    if (rift) {
+      if (choice === 'seal') {
+        this.state = sealRift(this.state, rift);
+        const biome = this.state.riftStates[rift.id]?.biome;
+        this.message = `You sealed the ${rift.name}. The seam collapsed toward ${biome}.`;
+      } else {
+        this.state = attuneRift(this.state, rift);
+        this.message = `You attuned the ${rift.name}. The convergence deepens — wilder things now roam.`;
+      }
+      this.beatenWardens.delete(rift.id);
+    }
+    this.overlay = null;
+    this.autosave();
+    return this.view();
   }
 
   // Carry each party member's persisted HP/status into the battle (no free heal).
@@ -609,7 +664,9 @@ class GameSession {
       const out = applyBattleResult(this.state, {
         won: true, finalConditions,
         defeatedTeam: b.defeated, participantUids: Array.from(b.participants), isWild: b.isWild,
-        trainer: b.gymId ? { basePayout: getGym(b.gymId).trainer.basePayout, tier: getGym(b.gymId).trainer.baseTier } : undefined,
+        trainer: b.gymId ? { basePayout: getGym(b.gymId).trainer.basePayout, tier: getGym(b.gymId).trainer.baseTier }
+          : b.wardenRift ? { basePayout: getRift(b.wardenRift)!.warden.basePayout, tier: getRift(b.wardenRift)!.warden.baseTier }
+          : undefined,
         rng: makeRng(1),
       });
       this.state = out.state;
@@ -628,6 +685,7 @@ class GameSession {
         items: out.summary.items.map((id) => getItem(id).name),
       };
       if (b.gymId) { const gym = getGym(b.gymId); this.trainerGym[gym.trainer.id] = b.gymId; this.state = recordTrainerDefeat(grantBadge(this.state, gym.badgeId), gym.trainer.id); msg = `You earned the ${gym.badgeId} badge!`; }
+      else if (b.wardenRift) { this.beatenWardens.add(b.wardenRift); msg = `You bested Warden ${getRift(b.wardenRift)!.warden.name}!`; }
       else msg = `You won! +${out.summary.money}₽`;
     } else {
       this.writeBackParty(finalConditions); // persist the beating even on a loss
@@ -648,7 +706,9 @@ class GameSession {
   battleContinue() {
     const b = this.battle; if (!b) return this.view();
     this.message = b.ended?.message ?? '';
+    const wonWarden = b.wardenRift && b.bridge.state.winner === 'p1' ? b.wardenRift : null;
     this.battle = null;
+    if (wonWarden) this.openRiftChoice(wonWarden); // surface the Seal/Attune choice
     this.autosave();
     return this.view();
   }
@@ -829,6 +889,7 @@ export async function dispatch(cmd: string, body: any) {
     case 'switchMon': return singleton.switchMon(body.index);
     case 'catch': return singleton.catch(body.ball ?? 'poke');
     case 'battleContinue': return singleton.battleContinue();
+    case 'chooseRift': return singleton.chooseRift(body.choice);
     case 'useItemBattle': return singleton.useItemBattle(body.itemId);
     case 'run': return singleton.run();
     case 'summary': return singleton.summary(body.uid);
