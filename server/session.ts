@@ -31,6 +31,8 @@ import { makeRng } from '../src/ai/rng';
 import type { PokemonSet, Action, BallType } from '../src/bridge/types';
 import * as Sim from 'pokemon-showdown';
 import { SLICE_MAPS } from '../web/overworld/maps/slice';
+import { ZONE_MAPS, ZONE_RIFT, HUB_ID } from '../web/overworld/maps/zones';
+import { getRift } from '../src/content/rifts';
 import { loadMapV2, walkableAt, warpAt, encounterAt, hasMapV2 } from '../web/overworld/maps/loader';
 import type { MapV2 } from '../web/overworld/maps/mapv2';
 import { tileAt, isWalkable, metaAt, type TileMap } from '../web/overworld/tilemap';
@@ -59,7 +61,7 @@ const BALL_ITEM: Record<string, string> = { poke: 'pokeball', great: 'greatball'
 
 class GameSession {
   state: GameState;
-  locationId = 'aethels-rest';
+  locationId = HUB_ID;
   px = 0; py = 0;
   battle: BattleCtx | null = null;
   message = '';
@@ -83,7 +85,15 @@ class GameSession {
     for (const p of this.state.party) this.state = registerCaught(this.state, this.dexNum(p.species)); // starters in the dex
     this.enterLocation(this.locationId); // spawn at the start location (imported map or legacy)
   }
-  private map(): TileMap { return SLICE_MAPS[this.locationId]; }
+  private map(): TileMap { return SLICE_MAPS[this.locationId] ?? ZONE_MAPS[this.locationId]; }
+
+  /** Wild-encounter table for the current location: rift zones use their rift's
+   *  fused table; legacy slice maps use their region location's table. */
+  private zoneEncounterTable() {
+    const riftId = ZONE_RIFT[this.locationId];
+    if (riftId) return getRift(riftId)?.fusedEncounters;
+    return getLocation(this.locationId)?.encounters;
+  }
   /** The current location's imported map, or null if it's a legacy TileMap location. */
   // MapV2 (Essentials-imported 2D tiles) retired in favour of the 3D overworld,
   // which renders the legacy tile-string maps. Force the legacy path everywhere.
@@ -102,7 +112,7 @@ class GameSession {
 
   /** Debug: jump straight to any location (imported map or legacy). */
   loadSample(id = 'sample') {
-    if (!hasMapV2(id) && !SLICE_MAPS[id]) { this.message = `no map ${id}`; return this.view(); }
+    if (!hasMapV2(id) && !SLICE_MAPS[id] && !ZONE_MAPS[id]) { this.message = `no map ${id}`; return this.view(); }
     this.enterLocation(id);
     return this.view();
   }
@@ -167,8 +177,8 @@ class GameSession {
     if (t === 'center') { this.state = healParty(this.state); this.overlay = { kind: 'center', message: 'Welcome! Your Pokémon are now fully rested and healed.' }; return this.view(); }
     if (t === 'shop') { return this.openShop(); }
     if (t === 'grass') {
-      const loc = getLocation(this.locationId);
-      if (loc.encounters) { const enc = rollEncounter(loc.encounters, timeOfDay(this.state), makeRng(Date.now())); if (enc) return this.startWild(enc.species, enc.level); }
+      const table = this.zoneEncounterTable();
+      if (table) { const enc = rollEncounter(table, timeOfDay(this.state), makeRng(Date.now())); if (enc) return this.startWild(enc.species, enc.level); }
     }
     return this.view();
   }

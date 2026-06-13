@@ -11,7 +11,7 @@ interface Npc extends Pt { id: string; }
 interface Exit extends Pt { to: string; }
 interface GrassPatch extends Pt { r: number; }
 
-interface AreaSpec {
+export interface AreaSpec {
   id: string; biome: string; w: number; h: number;
   spawn: Pt;
   exits: Exit[];
@@ -21,7 +21,7 @@ interface AreaSpec {
   path?: Pt[];
 }
 
-function genArea(s: AreaSpec): TileMap {
+export function genArea(s: AreaSpec): TileMap {
   const { w, h } = s;
   const tiles: Tile[][] = Array.from({ length: h }, () => Array.from({ length: w }, () => 'field' as Tile));
   const meta: Record<string, TileMeta> = {};
