@@ -416,6 +416,7 @@ class GameSession {
     if (active.heldItem) { try { const it = getItem(active.heldItem); heldItem = it.name; } catch { heldItem = active.heldItem; } }
     const self = {
       species: a1.species, num: this.dexNum(a1.species), level: active.level, gender: active.gender ?? 'N',
+      heightm: dex.species.get(a1.species).heightm ?? 1,
       // hp derives from the LIVE battle percent (persisted party HP only updates at battle end)
       hpPercent: a1.hpPercent, hp: Math.max(0, Math.round((a1.hpPercent / 100) * maxHp(active))), maxHp: maxHp(active),
       status: a1.status, boosts: a1.boosts ?? {}, volatiles: a1.volatiles ?? [],
@@ -426,6 +427,7 @@ class GameSession {
     const foeSet = b.oppTeam.find((st) => dex.species.get(st.species).name === foeSp.name);
     const foe = {
       species: a2.species, num: this.dexNum(a2.species), hpPercent: a2.hpPercent,
+      heightm: foeSp.heightm ?? 1,
       status: a2.status, boosts: a2.boosts ?? {}, volatiles: a2.volatiles ?? [],
       types: foeSp.types as string[], level: foeSet?.level ?? active.level,
     };

@@ -58,34 +58,52 @@ export class BattleScreen {
     });
   }
 
+  private readonly SELF_POS = { x: -2.2, z: 1.0 };
+  private readonly FOE_POS = { x: 2.1, z: -1.3 };
+
+  // Map real species height (m) to an on-screen height in world units. Compressed
+  // (height^0.4) and clamped so tiny mons stay visible and giants don't fill the
+  // screen, while relative sizes still read (Spinarak < Pikachu < Arcanine < Onix).
+  private sizeFor(heightm: number): number {
+    const h = Math.max(0.1, heightm || 1);
+    return Math.min(4.5, Math.max(1.2, 2.0 * Math.pow(h, 0.4)));
+  }
+
   // Try a real 3D model; fall back to a sprite billboard if it isn't available yet.
-  private async loadFighter(num: number, species: string, side: 'self' | 'foe'): Promise<{ obj: THREE.Object3D; mixer: THREE.AnimationMixer | null }> {
+  private async loadFighter(num: number, species: string, side: 'self' | 'foe', heightm: number): Promise<{ obj: THREE.Object3D; mixer: THREE.AnimationMixer | null }> {
+    const target = this.sizeFor(heightm);
     try {
-      const { root, mixer } = await loadModel(num, 2.2);
-      root.rotation.y = side === 'self' ? Math.PI : 0; // self faces away (back to cam), foe faces camera
+      const { root, mixer } = await loadModel(num, target);
       return { obj: root, mixer };
     } catch {
       const spr = await loadCreature(species, side === 'self' ? 'back' : 'front');
-      spr.scale.set(2.8, 2.8, 1); spr.position.y = 1.4;
+      const s = target * 1.25; spr.scale.set(s, s, 1); spr.position.y = target * 0.62;
       return { obj: spr, mixer: null };
     }
+  }
+
+  // Yaw so an object placed at `from` faces `to` (models' forward is +Z at rot 0).
+  private faceAngle(from: { x: number; z: number }, to: { x: number; z: number }): number {
+    return Math.atan2(to.x - from.x, to.z - from.z);
   }
 
   async render(view: View) {
     if (view.self.species !== this.selfKey) {
       this.selfKey = view.self.species;
       if (this.selfObj) this.scene.remove(this.selfObj);
-      const f = await this.loadFighter(view.self.num, view.self.species, 'self');
+      const f = await this.loadFighter(view.self.num, view.self.species, 'self', view.self.heightm ?? 1);
       this.selfObj = f.obj; this.selfMixer = f.mixer;
-      this.selfObj.position.x = -2.2; this.selfObj.position.z = 1.0;
+      this.selfObj.position.x = this.SELF_POS.x; this.selfObj.position.z = this.SELF_POS.z;
+      this.selfObj.rotation.y = this.faceAngle(this.SELF_POS, this.FOE_POS); // face the foe
       this.scene.add(this.selfObj);
     }
     if (view.foe.species !== this.foeKey) {
       this.foeKey = view.foe.species;
       if (this.foeObj) this.scene.remove(this.foeObj);
-      const f = await this.loadFighter(view.foe.num, view.foe.species, 'foe');
+      const f = await this.loadFighter(view.foe.num, view.foe.species, 'foe', view.foe.heightm ?? 1);
       this.foeObj = f.obj; this.foeMixer = f.mixer;
-      this.foeObj.position.x = 2.1; this.foeObj.position.z = -1.3;
+      this.foeObj.position.x = this.FOE_POS.x; this.foeObj.position.z = this.FOE_POS.z;
+      this.foeObj.rotation.y = this.faceAngle(this.FOE_POS, this.SELF_POS); // face your mon, not the camera
       this.scene.add(this.foeObj);
     }
     this.hud.render({
