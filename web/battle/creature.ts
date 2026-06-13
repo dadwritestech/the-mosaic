@@ -34,9 +34,12 @@ export async function loadModel(dexNum: number, targetHeight = 1.5): Promise<Loa
   const gltf = await gltfLoader().loadAsync(modelUrl(dexNum));
   const root = gltf.scene;
   root.traverse((o: any) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-  // normalize scale to a consistent on-field height
+  // Normalize by the LARGEST dimension, not height: flat/sprawling mons (spiders,
+  // snakes, fish) have a tiny bbox height and would otherwise balloon when scaled
+  // to a target height. Max-extent keeps relative sizes sane across body shapes.
   const size = new THREE.Vector3(); new THREE.Box3().setFromObject(root).getSize(size);
-  root.scale.setScalar(targetHeight / Math.max(size.y, 0.001));
+  const maxDim = Math.max(size.x, size.y, size.z, 0.001);
+  root.scale.setScalar(targetHeight / maxDim);
   // drop to ground (min.y -> 0)
   const grounded = new THREE.Box3().setFromObject(root);
   root.position.y -= grounded.min.y;
