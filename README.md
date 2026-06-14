@@ -104,8 +104,8 @@ Runs entirely in a browser. No installation needed by the end user — just `doc
 ### Quick Start
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/YOUR_REPO_NAME
-cd YOUR_REPO_NAME
+git clone https://github.com/dadwritestech/the-mosaic.git
+cd the-mosaic
 docker-compose up --build
 ```
 
