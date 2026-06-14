@@ -1,0 +1,20 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copy package files
+COPY package.json package-lock.json ./
+RUN npm ci
+
+# Copy the rest of the application code
+COPY . .
+
+# Set environment variables
+ENV NODE_ENV=production
+ENV PORT=3001
+
+# Expose backend API port
+EXPOSE 3001
+
+# Run the backend using tsx (already in devDependencies, or install globally if needed)
+CMD ["npx", "tsx", "server/standalone.ts"]

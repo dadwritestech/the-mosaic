@@ -1,0 +1,41 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Outside tile reference</title>
+<style>body{margin:0;background:#222;font:10px monospace}canvas{display:block}</style>
+<canvas id="c"></canvas>
+<script>
+// Draws Outside.png in native 8-col layout, scaled, with tile-ID labels.
+// URL params: ?from=<tilesetRow>&to=<tilesetRow>   (tileset row = floor((id-384)/8))
+const COLS = 8, TS = 32, SCALE = 2.2;
+const p = new URLSearchParams(location.search);
+const fromRow = parseInt(p.get('from') ?? '0', 10);
+const toRow = parseInt(p.get('to') ?? '24', 10);
+const img = new Image();
+img.src = '/2d/Outside.png';
+img.onload = () => {
+  const rows = toRow - fromRow;
+  const cw = COLS * TS * SCALE, ch = rows * TS * SCALE;
+  const c = document.getElementById('c');
+  c.width = cw; c.height = ch;
+  const g = c.getContext('2d');
+  g.imageSmoothingEnabled = false;
+  for (let r = 0; r < rows; r++) {
+    for (let col = 0; col < COLS; col++) {
+      const srcRow = fromRow + r;
+      const id = 384 + srcRow * COLS + col;
+      const dx = col * TS * SCALE, dy = r * TS * SCALE;
+      g.drawImage(img, col * TS, srcRow * TS, TS, TS, dx, dy, TS * SCALE, TS * SCALE);
+      // id label
+      g.fillStyle = 'rgba(0,0,0,0.6)';
+      g.fillRect(dx, dy, 26, 11);
+      g.fillStyle = '#0f0';
+      g.font = '10px monospace';
+      g.fillText(String(id), dx + 1, dy + 9);
+      // grid
+      g.strokeStyle = 'rgba(255,255,255,0.15)';
+      g.strokeRect(dx, dy, TS * SCALE, TS * SCALE);
+    }
+  }
+  document.title = `tiles rows ${fromRow}-${toRow} (ids ${384 + fromRow * 8}-${384 + toRow * 8})`;
+};
+</script>

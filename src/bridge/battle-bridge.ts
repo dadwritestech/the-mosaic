@@ -80,20 +80,25 @@ export class BattleBridge {
           if (req.wait) { this.latestRequest[side] = null; continue; }
           if (req.teamPreview) { void s.write('default'); continue; }
           if (req.forceSwitch) {
-            // AI (p2) always auto-switches; p1 auto-switches only in autonomous
-            // battles (tests). In the game, p1's forced switch is surfaced so the
-            // player chooses (stored in latestRequest below).
             if (side === 'p2' || this.autoSwitchAll) {
               void s.write('default');
               this.latestRequest[side] = null;
               continue;
             }
+            // p1 forceSwitch: store it so the player can pick, then IMMEDIATELY
+            // signal the turn boundary so submitTurn() can unblock. Showdown won't
+            // emit |turn|N until AFTER the switch is submitted, so we must unblock
+            // here or submitTurn deadlocks.
+            this.latestRequest[side] = req;
+            this.signalTurnBoundary();
+            continue;
           }
-          this.latestRequest[side] = req; // active move or forceSwitch request
+          this.latestRequest[side] = req; // active move request
         }
       }
     })();
   }
+
 
   /** Background loop: parse public output into events; signal turn boundaries. */
   private consumeOutput(): void {
@@ -136,13 +141,27 @@ export class BattleBridge {
       })(),
       fainted: p.condition.includes('fnt'),
     }));
-    return { moves, switches, canCatch: this._state.isWild && side === 'p1' };
+    return { moves, switches, canCatch: this._state.isWild && side === 'p1' && !!req?.active };
   }
 
   private toCmd(a: Action): string {
     if (a.kind === 'move') return `move ${a.index}`;
     if (a.kind === 'switch') return `switch ${a.index}`;
     return 'default'; // catch is handled by attemptCatch, never reaches here
+  }
+
+  /** True when Showdown is waiting for p1 to pick a forced switch (e.g. after a faint). */
+  needsForcedSwitch(): boolean {
+    const req = this.latestRequest.p1;
+    return !!(req?.forceSwitch);
+  }
+
+  /** Resolve a forced-switch request directly (no AI turn needed). */
+  async submitForcedSwitch(switchIndex: number): Promise<void> {
+    this.eventBuffer = [];
+    const ready = this.waitForTurnBoundary();
+    void this.streams.p1.write(`switch ${switchIndex}`);
+    await ready;
   }
 
   async submitTurn(p1Action: Action, p2Action: Action): Promise<TurnResult> {

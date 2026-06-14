@@ -25,13 +25,23 @@ fully-tested logic. Turns ~180 passing tests into a game you can walk around and
 
 ## Stack & architecture
 
-- **Vite + TypeScript** web app in `web/`, importing `src/game`/`src/ai`/`src/bridge`/
-  `src/content` as the model. Presentation is view/controller; **no new game logic.**
-- **Two renderers switched by screen:** a 2D layer (Canvas/PixiJS or DOM) for overworld
-  + menus; **Three.js** for the 3D battle scene. A DOM/CSS overlay for HUD/menus.
-- **Screen state machine** (`GameApp`): one of `overworld` / `battle` / `dialogue`
-  active at a time (more screens in 5b); holds the live `GameState`; transitions
-  between screens and threads results back (e.g. `applyBattleResult` after a battle).
+> **ARCHITECTURE REVISION (2026-06-08):** `pokemon-showdown` is a Node *server*
+> package (pulls in `pg`/`fs`/process-managers) and **cannot be bundled into the
+> browser.** So the browser canNOT import the `src/` logic directly. **Chosen fix
+> (Option 1): a thin Node game-server.** Implemented as a **Vite dev-server API
+> middleware** — the game logic runs in Vite's Node process (where Showdown works),
+> the browser is a thin client calling `/api/*` over `fetch`. One `npm run dev`, one
+> process, **zero changes to `src/`** (all 179 tests stay valid). A standalone
+> production server is deferred (dev-mode is how the private experiment is played).
+
+- **Vite + TypeScript.** `web/` = thin browser client (rendering + input only, no
+  `pokemon-showdown`). `server/` = a `GameSession` (holds `GameState` + position +
+  the active `BattleBridge`) exposed via Vite API middleware; imports `src/*`.
+- **Browser ↔ server protocol:** JSON over `fetch('/api/<cmd>')` (request/response;
+  turn-based, so no socket needed). Server returns view-models the browser renders.
+- **Two renderers in the browser:** a 2D Canvas overworld + a **Three.js** 3D battle
+  scene, with a DOM HUD overlay. A **screen state machine** switches them; the live
+  `GameState` lives on the **server**, the browser renders the view it's sent.
 
 ## Decomposition
 

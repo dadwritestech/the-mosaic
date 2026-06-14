@@ -19,6 +19,7 @@ import { getItem } from '../src/game/items/catalog';
 import { buyItem, sellItem, availableStock, priceMultipliers } from '../src/game/shop';
 import { serialize, deserialize, validateAndRepair } from '../src/game/save';
 import { FileSaveStore } from './file-save-store';
+import { PgSaveStore } from './pg-save-store';
 import { composeTeam } from '../src/ai/team-composer';
 import { BattleBridge } from '../src/bridge/battle-bridge';
 import { chooseAction } from '../src/ai/decision-brain';
@@ -67,25 +68,44 @@ class GameSession {
   battle: BattleCtx | null = null;
   message = '';
   overlay: any = null;                 // open menu overlay (pause/party/bag/shop/center/message), or null
-  private saves = new FileSaveStore('.saves');
+  private saves = process.env.DATABASE_URL 
+    ? new PgSaveStore(process.env.DATABASE_URL) 
+    : new FileSaveStore('.saves');
   private boxIndex = 0;                 // PC box currently being viewed
   private trainerGym: Record<string, string> = {}; // trainerId -> gymId, for Vs-Seeker rematches
   private beatenWardens = new Set<string>();        // rift ids whose Warden is beaten but not yet Sealed/Attuned
   private visitedLocations = new Set<string>();     // location ids the player has entered
 
-  constructor() {
-    let g = addToParty(createNewGame({ difficultyMode: 'normal', nuzlocke: false }),
-      createOwned({ species: 'Pikachu', level: 8, moves: ['thunderbolt', 'quickattack', 'irontail', 'thunderwave'], nature: 'Timid' }));
-    // A second party member so switching is usable from the start.
-    g = addToParty(g, createOwned({ species: 'Eevee', level: 8, moves: wildMoveset('Eevee', 8), nature: 'Jolly' }));
-    // Starter wallet + supplies so the shop/bag/Center loop is usable from the first step.
-    g = addMoney(g, 3000);
-    g = addItem(g, 'medicine', 'potion', 5);
-    g = addItem(g, 'medicine', 'antidote', 2);
-    g = addItem(g, 'balls', 'pokeball', 10);
-    this.state = g;
-    for (const p of this.state.party) this.state = registerCaught(this.state, this.dexNum(p.species)); // starters in the dex
-    this.enterLocation(this.locationId); // spawn at the start location (imported map or legacy)
+  starterChoices: string[] = [];        // 3 randomly chosen starters
+
+  constructor(isLoad = false) {
+    this.state = createNewGame({ difficultyMode: 'normal', nuzlocke: false });
+    
+    if (!isLoad) {
+      // Pick 3 random 3-stage base pokemon for starters with unique types
+      const pool = ['Bulbasaur', 'Charmander', 'Squirtle', 'Chikorita', 'Cyndaquil', 'Totodile', 'Treecko', 'Torchic', 'Mudkip', 'Turtwig', 'Chimchar', 'Piplup', 'Snivy', 'Tepig', 'Oshawott', 'Chespin', 'Fennekin', 'Froakie', 'Rowlet', 'Litten', 'Popplio', 'Grookey', 'Scorbunny', 'Sobble', 'Sprigatito', 'Fuecoco', 'Quaxly', 'Pidgey', 'Mareep', 'Aron', 'Trapinch', 'Spheal', 'Shinx', 'Gible', 'Beldum', 'Bagon', 'Larvitar'];
+      const shuffled = pool.sort(() => 0.5 - Math.random());
+      
+      const chosen: string[] = [];
+      const usedTypes = new Set<string>();
+      
+      for (const species of shuffled) {
+        if (chosen.length === 3) break;
+        const data = Sim.Dex.species.get(species);
+        if (!data || !data.types) continue;
+        
+        const hasOverlap = data.types.some(t => usedTypes.has(t));
+        if (hasOverlap) continue;
+        
+        chosen.push(species);
+        data.types.forEach(t => usedTypes.add(t));
+      }
+      // Fallback if somehow we couldn't find 3 (highly unlikely)
+      if (chosen.length < 3) {
+        chosen.push(...shuffled.filter(s => !chosen.includes(s)).slice(0, 3 - chosen.length));
+      }
+      this.starterChoices = chosen;
+    }
   }
   private map(): TileMap { return SLICE_MAPS[this.locationId] ?? ZONE_MAPS[this.locationId]; }
 
@@ -111,13 +131,28 @@ class GameSession {
   private curMapV2(): MapV2 | null { return null; }
   private dexNum(species: string): number { return (Sim.Dex as any).forGen(9).species.get(species).num; }
 
-  /** Move into a location, placing the player at its spawn (works for either map type). */
-  private enterLocation(id: string) {
+  /** Move into a location, placing the player at the corresponding exit or its spawn. */
+  private enterLocation(id: string, fromId?: string) {
     this.locationId = id;
     this.visitedLocations.add(id);
     const mv = this.curMapV2();
-    if (mv) { this.px = mv.spawn.x; this.py = mv.spawn.y; }
-    else { const m = this.map(); this.px = m.spawn.x; this.py = m.spawn.y; }
+    let found = false;
+    if (mv) { 
+      this.px = mv.spawn.x; this.py = mv.spawn.y; found = true;
+    } else { 
+      const m = this.map(); 
+      if (fromId && m.meta) {
+        for (const key in m.meta) {
+          if (m.meta[key].exitTo === fromId) {
+            const [x, y] = key.split(',').map(Number);
+            this.px = x; this.py = y;
+            found = true;
+            break;
+          }
+        }
+      }
+      if (!found) { this.px = m.spawn.x; this.py = m.spawn.y; }
+    }
     this.autosave();
   }
 
@@ -140,6 +175,13 @@ class GameSession {
   }
 
   view() {
+    if (this.state.party.length === 0) {
+      const choices = this.starterChoices.map(species => ({
+        species,
+        num: Sim.Dex.species.get(species)?.num || 1
+      }));
+      return { screen: 'starter' as const, choices };
+    }
     if (this.battle) return this.battleView();
     const mv = this.curMapV2();
     if (mv) {
@@ -194,7 +236,7 @@ class GameSession {
     this.px = nx; this.py = ny;
     this.state = advanceStep(this.state);
     const meta = metaAt(m, nx, ny);
-    if (meta.exitTo) { this.enterLocation(meta.exitTo); return this.view(); }
+    if (meta.exitTo) { this.enterLocation(meta.exitTo, this.locationId); return this.view(); }
     if (meta.npcId) {
       if (meta.npcId.startsWith('warden:')) return this.wardenInteract(meta.npcId.slice(7));
       this.message = 'Aethel: The Core remembers every trainer who walked here.'; return this.view();
@@ -256,7 +298,7 @@ class GameSession {
     return ['heal', 'cure', 'revive', 'pp', 'ev', 'evoStone', 'repel', 'escapeRope'].includes(kind);
   }
 
-  private shopId(): string { return getLocation(this.locationId).shopId ?? 'aethel-mart'; }
+  private shopId(): string { return getLocation(this.locationId)?.shopId ?? 'aethel-mart'; }
   private shopOverlay() {
     const shop = getShop(this.shopId());
     const mult = priceMultipliers(this.state.settings.difficultyMode);
@@ -546,17 +588,20 @@ class GameSession {
       self, foe,
       weather: s.weather ?? '', terrain: s.terrain ?? '',
       moves: c.moves.map((mo: { index: number; id: string; name: string; pp: number; maxpp: number }) => {
-        const md = dex.moves.get(mo.id);
+        let md: any; try { md = dex.moves.get(mo.id); } catch { md = null; }
         return {
-          index: mo.index, name: mo.name, type: md.type, category: md.category, pp: mo.pp, maxpp: mo.maxpp,
-          power: md.basePower || null, accuracy: md.accuracy === true ? null : md.accuracy,
-          shortDesc: md.shortDesc ?? md.desc ?? '',
-          eff: md.category === 'Status' ? null : this.typeEff(md.type, foe.types),
+          index: mo.index, name: mo.name,
+          type: md?.type ?? 'Normal', category: md?.category ?? 'Physical',
+          pp: mo.pp, maxpp: mo.maxpp,
+          power: md?.basePower || null, accuracy: md?.accuracy === true ? null : (md?.accuracy ?? null),
+          shortDesc: md?.shortDesc ?? md?.desc ?? '',
+          eff: md?.category === 'Status' ? null : this.typeEff(md?.type ?? 'Normal', foe.types),
         };
       }),
-      bag: this.battleBag(), inBattleItems: !this.battle!.isWild ? true : true, // bag usable in any battle
+      bag: this.battleBag(), inBattleItems: true,
       switches, balls,
       canCatch: c.canCatch, log: b.log,
+      forceSwitch: b.bridge.needsForcedSwitch(), // signals UI to demand a switch pick
       ended: b.ended ?? null,
       done: s.winner !== undefined ? (s.winner === 'p1' ? 'win' : 'loss') : null,
       sidebar: this.sidebarData(),
@@ -622,18 +667,36 @@ class GameSession {
 
   async turn(moveIndex: number) {
     const b = this.battle; if (!b) return this.view();
+    // If a forced switch is pending (fainted mon) — a normal move is illegal.
+    if (b.bridge.needsForcedSwitch()) return this.battleView();
     await this.resolve({ kind: 'move', index: moveIndex });
     if (b.bridge.state.winner) return this.finish();
+    // After the turn, check whether an enemy faint triggered a forceSwitch for p1.
+    // If so, just return battleView — the UI will see forceSwitch:true and prompt.
     return this.battleView();
   }
 
   async switchMon(index: number) {
     const b = this.battle; if (!b) return this.view();
     const target = this.state.party[index - 1];
-    if (index - 1 === b.activeIdx || !target) return this.battleView();
-    const fc = b.bridge.finalConditions().p1;
-    const hpPct = fc[index - 1]?.hpPercent ?? Math.round((target.currentHp / maxHp(target)) * 100);
-    if (hpPct <= 0) { b.log = `${target.species} has no energy left to battle!`; return this.battleView(); }
+    if (!target) return this.battleView();
+
+    // -- Forced-switch path (our mon just fainted; Showdown is waiting for the pick)
+    if (b.bridge.needsForcedSwitch()) {
+      const fc = b.bridge.finalConditions().p1;
+      const hpPct = fc[index - 1]?.hpPercent ?? Math.round((target.currentHp / maxHp(target)) * 100);
+      if (hpPct <= 0) { b.log = `${target.species} has no energy left to battle!`; return this.battleView(); }
+      await b.bridge.submitForcedSwitch(index);
+      b.activeIdx = index - 1; b.participants.add(target.uid);
+      if (b.bridge.state.winner) return this.finish();
+      return this.battleView();
+    }
+
+    // -- Voluntary mid-turn switch
+    if (index - 1 === b.activeIdx) return this.battleView();
+    const fc2 = b.bridge.finalConditions().p1;
+    const hpPct2 = fc2[index - 1]?.hpPercent ?? Math.round((target.currentHp / maxHp(target)) * 100);
+    if (hpPct2 <= 0) { b.log = `${target.species} has no energy left to battle!`; return this.battleView(); }
     await this.resolve({ kind: 'switch', index });
     b.activeIdx = index - 1; b.participants.add(target.uid);
     if (b.bridge.state.winner) return this.finish();
@@ -776,6 +839,24 @@ class GameSession {
   /** New game: signal dispatch to create a fresh session. */
   newGame(): { __reset: true } {
     return { __reset: true };
+  }
+
+  chooseStarter(species: string) {
+    if (this.state.party.length > 0) return this.view(); // Already picked
+    
+    // Give the starter (Level 8 matches the original Pikachu difficulty curve)
+    this.state = addToParty(this.state, createOwned({ species, level: 8, moves: wildMoveset(species, 8), nature: 'Docile' }));
+    this.state = registerCaught(this.state, this.dexNum(species));
+    
+    // Give starter kit
+    this.state = addMoney(this.state, 3000);
+    this.state = addItem(this.state, 'medicine', 'potion', 5);
+    this.state = addItem(this.state, 'medicine', 'antidote', 2);
+    this.state = addItem(this.state, 'balls', 'pokeball', 10);
+    
+    // Spawn in the starting town
+    (this as any).enterLocation(this.locationId);
+    return this.view();
   }
 
   /** Load game: prefer the autosave slot, else the first available save. */
@@ -961,6 +1042,7 @@ export async function dispatch(cmd: string, body: any) {
     case 'save': return singleton.save(body.slot);
     case 'load': return singleton.load(body.slot);
     case 'title': return singleton.title();
+    case 'chooseStarter': return singleton.chooseStarter(body.species);
     case 'newGame': {
       const r = singleton.newGame();
       if (r.__reset) { singleton = new GameSession(); return singleton.view(); }

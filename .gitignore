@@ -1,24 +1,41 @@
 node_modules/
 dist/
-*.log
-.DS_Store
-_spike*.cjs
-
-.superpowers/
 dist-web/
-_vite.log
-.playwright-mcp/
-t*-*.png
-.saves/
-web/public/models3d/
-sprites-master/
-*.zip
 
-# Essentials import working dirs
+# Log files
+*.log
+_vite.log
+.devserver.log
+.fetch-models.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Save files
+.saves/
+
+# Dev tool scratch
+_spike*.cjs
+.superpowers/
+.playwright-mcp/
+.claude/
+
+# Screenshot/dev snapshots at root
+t*-*.png
+
+# Vite/TS build outputs
+web/public/models3d/
+
+# Essentials import working dirs (generated, not authored)
 .essentials/
 web/public/2d/tilesets/
 
-# extracted CC0 asset source packs (only used GLBs are copied into web/public/kit)
+# Extracted CC0 asset source packs (only compiled GLBs are committed)
 .assets-src/
 /kenney_*
 /KayKit_*
+
+# Large binary assets not included in the repo
+sprites-master/
+*.zip

@@ -216,6 +216,7 @@ export class BattleScreenV2 {
         const drop = this.prevFoeHp - view.foe.hpPercent;
         this.floatText('foe', '-' + drop + '%', '#ff5544');
         try { sfxHit(drop > 15 ? 2 : 1); } catch { /* */ }
+        if (drop >= 15) this.triggerShake();
       }
       if (this.prevSelfHp !== undefined && view.self.hpPercent < this.prevSelfHp) {
         const drop = this.prevSelfHp - view.self.hpPercent;
@@ -226,10 +227,9 @@ export class BattleScreenV2 {
       this.prevSelfHp = view.self.hpPercent;
 
       if (view.log) {
-        const roseMatch = view.log.match(/rose/);
-        const fellMatch = view.log.match(/fell/);
-        if (roseMatch) this.floatText('self', '\u25B2', '#46d160');
-        if (fellMatch) this.floatText('foe', '\u25BC', '#e5533a');
+        const isFoe = view.log.includes('The opposing') || view.log.startsWith('Opposing');
+        if (view.log.includes(' rose!')) this.floatText(isFoe ? 'foe' : 'self', '\u25B2', '#46d160');
+        if (view.log.includes(' fell!')) this.floatText(isFoe ? 'foe' : 'self', '\u25BC', '#e5533a');
       }
     } catch {
       /* defensive — a parse miss must not break rendering */
@@ -253,13 +253,7 @@ export class BattleScreenV2 {
       status: view.self.status,
     });
 
-    /* --- screen shake on heavy hits (HP drop >= 15%) --- */
-    try {
-      if (this.prevFoeHp !== undefined && view.foe.hpPercent < this.prevFoeHp) {
-        const drop = this.prevFoeHp - view.foe.hpPercent;
-        if (drop >= 15) this.triggerShake();
-      }
-    } catch { /* defensive */ }
+    /* --- screen shake logic is now merged with hp drops above --- */
 
     /* --- low-HP warning (<=20% HP: pulse + audio) --- */
     const selfHpPct = view.self?.hpPercent;

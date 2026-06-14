@@ -1,140 +1,144 @@
-import * as THREE from 'three';
-import { loadModel, loadCreature } from './creature';
 import { Hud } from '../ui/hud';
 import type { View } from '../net';
 
-// Cinematic 3D battle: real animated GLB models on a lit field, classic 2D HUD.
 export class BattleScreen {
-  private renderer = new THREE.WebGLRenderer({ antialias: true });
-  private scene = new THREE.Scene();
-  private camera = new THREE.PerspectiveCamera(46, window.innerWidth / window.innerHeight, 0.1, 100);
+  private container: HTMLDivElement;
+  private background: HTMLDivElement;
+  private selfImg: HTMLImageElement;
+  private foeImg: HTMLImageElement;
   private hud: Hud;
-  private selfObj?: THREE.Object3D;
-  private foeObj?: THREE.Object3D;
-  private selfMixer: THREE.AnimationMixer | null = null;
-  private foeMixer: THREE.AnimationMixer | null = null;
   private selfKey = '';
   private foeKey = '';
-  private lastT = performance.now();
-  private running = false;
   private endedEl: HTMLDivElement | null = null;
   private endKey: ((e: KeyboardEvent) => void) | null = null;
 
   constructor(private host: HTMLElement, private onAction: (cmd: string, body?: Record<string, unknown>) => void) {
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.1;
-    this.renderer.domElement.style.cssText = 'position:absolute;inset:0';
-    this.host.appendChild(this.renderer.domElement);
+    this.container = document.createElement('div');
+    this.container.style.cssText = 'position:absolute;inset:0;background:#afe3ff;overflow:hidden;font-family:"Segoe UI",system-ui,sans-serif;';
+    
+    // Background scenery
+    this.background = document.createElement('div');
+    this.background.style.cssText = 'position:absolute;inset:0;background:linear-gradient(to bottom, #74b9ff 0%, #e0f2fe 50%, #8ac45a 50%, #65a30d 100%);';
+    this.container.appendChild(this.background);
 
-    this.scene.background = new THREE.Color('#afe3ff');
-    this.scene.fog = new THREE.Fog('#afe3ff', 16, 34);
+    // Battle pads
+    const createPad = (bottom: string, left: string, right: string, width: string, height: string) => {
+      const pad = document.createElement('div');
+      pad.style.cssText = `position:absolute;bottom:${bottom};width:${width};height:${height};background:#73b24c;border-radius:50%;border:3px solid #5a9638;box-shadow:inset 0 0 20px rgba(0,0,0,0.1);`;
+      if (left) pad.style.left = left;
+      if (right) pad.style.right = right;
+      return pad;
+    };
+    
+    // Self pad
+    this.container.appendChild(createPad('12%', '10%', '', '35%', '15%')); 
+    // Foe pad
+    this.container.appendChild(createPad('35%', '', '15%', '28%', '10%')); 
 
-    const ground = new THREE.Mesh(new THREE.CircleGeometry(9, 48), new THREE.MeshStandardMaterial({ color: '#8ac45a', roughness: 1 }));
-    ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; this.scene.add(ground);
+    // Self Sprite
+    this.selfImg = document.createElement('img');
+    // Centered horizontally over the pad (left 10% + half of 35% = 27.5%).
+    // Bottom aligned slightly above the vertical center of the pad (12% + half of 15% = 19.5%).
+    this.selfImg.style.cssText = 'position:absolute;bottom:18%;left:27.5%;transform:translateX(-50%);image-rendering:pixelated;transform-origin:bottom center;transition:transform 0.2s, filter 0.2s;z-index:2;';
+    this.container.appendChild(this.selfImg);
 
-    // subtle battle pads under each fighter (top sits at ~y=0 so feet rest on them)
-    const padMat = new THREE.MeshStandardMaterial({ color: '#73b24c', roughness: 0.95 });
-    for (const [px, pz] of [[-2.2, 1.0], [2.1, -1.3]] as const) {
-      const pad = new THREE.Mesh(new THREE.CylinderGeometry(1.55, 1.7, 0.12, 40), padMat);
-      pad.position.set(px, -0.05, pz); pad.receiveShadow = true; this.scene.add(pad);
-    }
+    // Foe Sprite
+    this.foeImg = document.createElement('img');
+    // Centered horizontally over the pad (right 15% + half of 28% = 29%).
+    // Bottom aligned slightly above the vertical center of the pad (35% + half of 10% = 40%).
+    this.foeImg.style.cssText = 'position:absolute;bottom:39%;right:29%;transform:translateX(50%);image-rendering:pixelated;transform-origin:bottom center;transition:transform 0.2s, filter 0.2s;z-index:1;';
+    this.container.appendChild(this.foeImg);
 
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x6a9a4a, 1.1));
-    const sun = new THREE.DirectionalLight(0xfff4e0, 1.2);
-    sun.position.set(4, 9, 5); sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024);
-    const sc = sun.shadow.camera as THREE.OrthographicCamera; sc.left = -8; sc.right = 8; sc.top = 8; sc.bottom = -8; sc.far = 30;
-    this.scene.add(sun);
+    this.host.appendChild(this.container);
 
-    this.camera.position.set(0, 3.4, 7.4); this.camera.lookAt(0, 1.35, 0);
-
-    this.hud = new Hud(this.host, {
+    this.hud = new Hud(this.container, {
       onMove: (i) => this.onAction('turn', { index: i }),
       onSwitch: (i) => this.onAction('switchMon', { index: i }),
       onBall: (ball) => this.onAction('catch', { ball }),
     });
-
-    this.handleResize = this.handleResize.bind(this);
-    window.addEventListener('resize', this.handleResize);
   }
 
-  private handleResize() {
-    this.camera.aspect = window.innerWidth / window.innerHeight;
-    this.camera.updateProjectionMatrix();
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
-  }
-
-  private readonly SELF_POS = { x: -2.2, z: 1.0 };
-  private readonly FOE_POS = { x: 2.1, z: -1.3 };
-
-  // Map real species height (m) to an on-screen height in world units. Compressed
-  // (height^0.4) and clamped so tiny mons stay visible and giants don't fill the
-  // screen, while relative sizes still read (Spinarak < Pikachu < Arcanine < Onix).
-  private sizeFor(heightm: number): number {
-    const h = Math.max(0.1, heightm || 1);
-    return Math.min(4.5, Math.max(1.2, 2.0 * Math.pow(h, 0.4)));
-  }
-
-  // Try a real 3D model; fall back to a sprite billboard if it isn't available yet.
-  private async loadFighter(num: number, species: string, side: 'self' | 'foe', heightm: number): Promise<{ obj: THREE.Object3D; mixer: THREE.AnimationMixer | null }> {
-    const target = this.sizeFor(heightm);
-    try {
-      const { root, mixer } = await loadModel(num, target);
-      return { obj: root, mixer };
-    } catch {
-      const spr = await loadCreature(species, side === 'self' ? 'back' : 'front');
-      const s = target * 1.25; spr.scale.set(s, s, 1); spr.position.y = target * 0.62;
-      return { obj: spr, mixer: null };
+  // Animate attack/hit using simple CSS transforms
+  private triggerAnim(img: HTMLImageElement, type: 'hit' | 'attack', baseScale: number) {
+    img.style.transition = 'none';
+    const xOffset = img === this.selfImg ? '-50%' : '50%';
+    if (type === 'hit') {
+      img.style.filter = 'brightness(2) sepia(1) hue-rotate(-50deg) saturate(5)';
+      img.style.transform = `translateX(calc(${xOffset} - 10px)) scale(${baseScale})`;
+      setTimeout(() => {
+        img.style.transition = 'transform 0.2s, filter 0.2s';
+        img.style.filter = 'none';
+        img.style.transform = `translateX(${xOffset}) scale(${baseScale})`;
+      }, 50);
+    } else {
+      img.style.transform = `translateX(${xOffset}) translateY(-20px) scale(${baseScale * 1.1})`;
+      setTimeout(() => {
+        img.style.transition = 'transform 0.2s';
+        img.style.transform = `translateX(${xOffset}) scale(${baseScale})`;
+      }, 100);
     }
   }
 
-  // Yaw so an object placed at `from` faces `to` (models' forward is +Z at rot 0).
-  private faceAngle(from: { x: number; z: number }, to: { x: number; z: number }): number {
-    return Math.atan2(to.x - from.x, to.z - from.z);
+  private getScale(heightm: number | undefined, isSelf: boolean): number {
+    const h = Math.max(0.1, heightm || 1);
+    // Base scale: multiply by 2.5 so a 1m tall pokemon is reasonably large (~240px from 96px sprite).
+    let s = 2.5 * Math.min(2.5, Math.max(0.4, Math.pow(h, 0.4)));
+    if (isSelf) s *= 1.3; // Self is closer to camera
+    return s;
   }
 
-  private disposeObj(obj: THREE.Object3D) {
-    this.scene.remove(obj);
-    obj.traverse((child: any) => {
-      if (child.geometry) child.geometry.dispose();
-      if (child.material) {
-        if (Array.isArray(child.material)) child.material.forEach((m: any) => m.dispose());
-        else child.material.dispose();
-      }
-    });
-  }
+  private selfScale = 1;
+  private foeScale = 1;
 
   async render(view: View) {
+    if (!view.self || !view.foe) return;
+
     if (view.self.species !== this.selfKey) {
       this.selfKey = view.self.species;
-      if (this.selfObj) this.disposeObj(this.selfObj);
-      const f = await this.loadFighter(view.self.num, view.self.species, 'self', view.self.heightm ?? 1);
-      this.selfObj = f.obj; this.selfMixer = f.mixer;
-      this.selfObj.position.x = this.SELF_POS.x; this.selfObj.position.z = this.SELF_POS.z;
-      this.selfObj.rotation.y = this.faceAngle(this.SELF_POS, this.FOE_POS); // face the foe
-      this.scene.add(this.selfObj);
+      this.selfScale = this.getScale(view.self.heightm, true);
+      this.selfImg.style.transform = `translateX(-50%) scale(${this.selfScale})`;
+      this.selfImg.src = `/pkmn/back/${view.self.num}.gif`;
+      this.selfImg.onerror = () => this.selfImg.src = `/pkmn/back/${view.self.num}.png`; // fallback to gif if png missing
+      this.selfImg.style.opacity = '0';
+      setTimeout(() => this.selfImg.style.opacity = '1', 100);
     }
+    
     if (view.foe.species !== this.foeKey) {
       this.foeKey = view.foe.species;
-      if (this.foeObj) this.disposeObj(this.foeObj);
-      const f = await this.loadFighter(view.foe.num, view.foe.species, 'foe', view.foe.heightm ?? 1);
-      this.foeObj = f.obj; this.foeMixer = f.mixer;
-      this.foeObj.position.x = this.FOE_POS.x; this.foeObj.position.z = this.FOE_POS.z;
-      this.foeObj.rotation.y = this.faceAngle(this.FOE_POS, this.SELF_POS); // face your mon, not the camera
-      this.scene.add(this.foeObj);
+      this.foeScale = this.getScale(view.foe.heightm, false);
+      this.foeImg.style.transform = `translateX(50%) scale(${this.foeScale})`;
+      this.foeImg.src = `/pkmn/${view.foe.num}.gif`;
+      this.foeImg.onerror = () => this.foeImg.src = `/pkmn/${view.foe.num}.png`;
+      this.foeImg.style.opacity = '0';
+      setTimeout(() => this.foeImg.style.opacity = '1', 100);
     }
+
+    // Very basic anim trigger based on log parsing (client-side only trick)
+    if (view.log) {
+      const lastLine = view.log[view.log.length - 1] || '';
+      if (lastLine.includes('lost') || lastLine.includes('hit')) {
+        if (lastLine.includes(view.foe.species)) this.triggerAnim(this.foeImg, 'hit', this.foeScale);
+        if (lastLine.includes(view.self.species)) this.triggerAnim(this.selfImg, 'hit', this.selfScale);
+      } else if (lastLine.includes('used')) {
+        if (lastLine.includes(view.foe.species)) this.triggerAnim(this.foeImg, 'attack', this.foeScale);
+        if (lastLine.includes(view.self.species)) this.triggerAnim(this.selfImg, 'attack', this.selfScale);
+      }
+    }
+
+    // Faint effect
+    this.selfImg.style.opacity = view.self.hpPercent === 0 ? '0' : '1';
+    this.foeImg.style.opacity = view.foe.hpPercent === 0 ? '0' : '1';
+
     this.hud.render({
       self: { name: `${view.self.species} L${view.self.level}`, hp: view.self.hpPercent, status: view.self.status, boosts: view.self.boosts ?? {}, volatiles: view.self.volatiles ?? [], item: view.self.heldItem || undefined },
       foe: { name: `${view.foe.species}`, hp: view.foe.hpPercent, status: view.foe.status, boosts: view.foe.boosts ?? {}, volatiles: view.foe.volatiles ?? [] },
       weather: view.weather ?? '', terrain: view.terrain ?? '',
       moves: view.moves, switches: view.switches ?? [], balls: view.balls ?? [],
       canCatch: view.canCatch, log: view.log,
+      forceSwitch: !!view.forceSwitch,
     });
+
     if ((view as any).ended) this.showEnded((view as any).ended); else this.clearEnded();
-    if (!this.running) { this.running = true; this.loop(); }
   }
 
   private clearEnded() {
@@ -142,19 +146,21 @@ export class BattleScreen {
     if (this.endKey) { window.removeEventListener('keydown', this.endKey); this.endKey = null; }
   }
 
-  // Battle-over overlay: result + rewards + a Continue button (battleContinue).
-  // Without this the screen stays on the move list after the foe faints — stuck.
   private showEnded(ended: any) {
     if (this.endedEl) return;
     const RC: Record<string, string> = { win: '#43e07d', caught: '#5db4ff', loss: '#ff7a6b', run: '#cbd5e1' };
     const color = RC[ended.result] ?? '#fff';
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:absolute;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;background:rgba(8,11,20,.5);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)';
+    
     const card = document.createElement('div');
     card.className = 'hud-glass';
-    card.style.cssText = 'min-width:300px;max-width:78%;padding:26px 32px;border-radius:22px;text-align:center;display:flex;flex-direction:column;gap:8px;color:#eef3ff;font-family:"Segoe UI",system-ui,sans-serif';
+    card.style.cssText = 'min-width:300px;max-width:78%;padding:26px 32px;border-radius:22px;text-align:center;display:flex;flex-direction:column;gap:8px;color:#eef3ff;';
+    
     const add = (text: string, css: string) => { const d = document.createElement('div'); d.textContent = text; d.style.cssText = css; card.appendChild(d); };
+    
     for (const ln of (ended.lines ?? [ended.message]) as string[]) add(ln, `font-size:18px;font-weight:800;color:${color};text-shadow:0 1px 3px rgba(0,0,0,.4)`);
+    
     const r = ended.rewards;
     if (r) {
       if (r.money) add(`+${r.money}₽`, 'font-size:14px;font-weight:600;color:#ffd76a;margin-top:4px');
@@ -162,16 +168,18 @@ export class BattleScreen {
       for (const lu of (r.levelUps ?? [])) add(`${lu.species} grew to Lv ${lu.level}!${lu.evolutionInto ? ` It evolved into ${lu.evolutionInto}!` : ''}`, 'font-size:13px;font-weight:700;color:#9ee7ff');
       for (const it of (r.items ?? [])) add(`Found ${it}!`, 'font-size:13px;color:#d6c8ff');
     }
+    
     const cont = document.createElement('button');
     cont.className = 'hud-btn';
     cont.textContent = 'Continue ▶';
     cont.style.cssText = 'pointer-events:auto;margin-top:12px;align-self:center;background:linear-gradient(135deg,#43e07d,#28c866);color:#06210f;font-size:16px;font-weight:800;padding:12px 30px;border:0;border-radius:99px;cursor:pointer';
     cont.addEventListener('click', () => this.onAction('battleContinue'));
+    
     card.appendChild(cont);
     overlay.appendChild(card);
     this.host.appendChild(overlay);
     this.endedEl = overlay;
-    // Enter / Space also continues (fast pick-up-and-play)
+    
     this.endKey = (e: KeyboardEvent) => { 
       if (e.key === 'Enter' || e.key === ' ') { 
         e.preventDefault(); 
@@ -182,34 +190,9 @@ export class BattleScreen {
     window.addEventListener('keydown', this.endKey);
   }
 
-  // Keep feet on the ground each frame: loadModel only grounds the bind pose,
-  // so an idle clip that lifts the mesh otherwise leaves it floating.
-  private _box = new THREE.Box3();
-  private groundFeet(o: THREE.Object3D) {
-    this._box.setFromObject(o);
-    const minY = this._box.min.y;
-    if (Number.isFinite(minY)) o.position.y -= minY;
-  }
-
-  private loop = () => {
-    if (!this.running) return;
-    requestAnimationFrame(this.loop);
-    const now = performance.now();
-    const dt = Math.min(0.05, (now - this.lastT) / 1000); this.lastT = now;
-    this.selfMixer?.update(dt); this.foeMixer?.update(dt);
-    if (this.selfObj) this.groundFeet(this.selfObj);
-    if (this.foeObj) this.groundFeet(this.foeObj);
-    this.renderer.render(this.scene, this.camera);
-  };
-
-  dispose() { 
-    this.running = false; 
-    this.clearEnded(); 
-    this.hud.clear(); 
-    if (this.selfMixer) this.selfMixer.stopAllAction();
-    if (this.foeMixer) this.foeMixer.stopAllAction();
-    window.removeEventListener('resize', this.handleResize);
-    this.renderer.domElement.remove(); 
-    this.renderer.dispose(); 
+  dispose() {
+    this.clearEnded();
+    this.hud.clear();
+    this.container.remove();
   }
 }

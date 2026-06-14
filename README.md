@@ -1,205 +1,185 @@
-# Convergence Region
+# 🌟 The Mosaic Region — A Pokémon-Style RPG
 
-A private experiment: a playable Pokémon-style RPG with a new region, built on the
-[Pokémon Showdown](https://github.com/smogon/pokemon-showdown) battle engine (used
-only for battle resolution). See `docs/superpowers/specs/` for the design and
-`docs/superpowers/plans/` for implementation plans.
+> **v1.0** — A fully playable browser-based Pokémon RPG built entirely with AI assistance, powered by the Pokémon Showdown battle engine.
 
-## Battle Bridge (sub-project 1 — complete)
+![Title Screen](docs/screenshots/title.png)
 
-A headless, typed wrapper over Showdown's engine. No graphics, no AI — pure logic.
+---
 
-```ts
-import { BattleBridge } from './src/bridge/battle-bridge';
-import { PIKACHU_TEAM, GYARADOS_TEAM } from './src/bridge/test-teams';
+## 🤖 How This Was Built
 
-const bridge = new BattleBridge();
-await bridge.startBattle(PIKACHU_TEAM, GYARADOS_TEAM, { formatid: 'gen9customgame' });
+This entire game was written in a single AI-assisted coding session using **Claude Code** (Anthropic's agentic coding assistant), with zero manual code written by the developer.
 
-while (bridge.state.winner === undefined) {
-  const { events } = await bridge.submitTurn(
-    { kind: 'move', index: 1 },
-    { kind: 'move', index: 1 },
-  );
-  console.log(events);
-}
-console.log('Winner:', bridge.state.winner);
+The process was conversational. The developer described what they wanted — *"make a Pokémon game"*, *"add a full region with 8 gyms"*, *"add a starter selection screen"*, *"make sure no two starters share a type"* — and Claude Code autonomously:
+
+- Designed the entire system architecture from scratch
+- Wrote all TypeScript across the frontend, backend, and shared game logic
+- Set up PostgreSQL + Docker Compose for production-style deployment
+- Debugged sprite rendering issues, Docker networking, and game balance in real time
+- Built and rebuilt every feature iteratively based on simple natural language feedback
+
+**This is a showcase of what's possible when you treat an AI as a true pair programmer.**
+
+---
+
+## ✨ Features
+
+### 🎮 Full Playable RPG
+- **8 Gym Badges** across a complete region: Verdant Hollow → Cerulean Deep → Ember Peak → Voltspire → Mindweave → Frostfell → Drakemaw → Shadowmere
+- **14 Interconnected Maps** — towns, routes, and gyms with seamless transitions between them
+- **Wild Pokémon encounters** in tall grass with day/night cycle affecting spawn tables
+- **Trainer battles** on routes with proper AI opponents
+- **Pokémon Centers** and **Shops** in every town
+
+### 🎲 Randomized Starter Selection
+Every new game is unique! On "New Game", the server picks **3 random Pokémon** from a pool of 37 classic 3-stage evolution lines (Bulbasaur, Bagon, Treecko, Mareep, etc.) and guarantees **no two starters share a type**. A premium animated UI lets you hover over animated pixel-art sprites before committing.
+
+### ⚔️ Real Battle Engine
+Battles are powered by the **Pokémon Showdown** battle simulator — the same engine used by millions of competitive players. This means:
+- Accurate damage calculations, type matchups, and stat formulas
+- All 1025+ Pokémon with real moves, abilities, and evolution lines
+- Proper status effects, switching, and turn structure
+
+### 🧠 Adaptive AI
+The gym leaders and trainers use a custom AI decision brain built on `@smogon/calc`. Difficulty scales naturally:
+- Early gym leaders play cautiously and make occasional mistakes
+- Later gym leaders are aggressive, predict switches, and draft type-counter teams
+
+### 💾 Save System
+- **PostgreSQL-backed saves** in Docker (production mode)
+- Autosave after every major event
+- Continue from the title screen
+
+### 🗺️ Region & Story
+The **Mosaic Region** is themed around convergence — different Pokémon generations colliding into one world. Routes are biome-themed (Kanto plains → Johto forests → Hoenn beaches → Alola islands → Unova tech hubs → Kalos gardens → Sinnoh tundra → Paldea wilds → Galar countryside).
+
+### 📱 Web-Based, Docker-Deployed
+Runs entirely in a browser. No installation needed by the end user — just `docker-compose up` and navigate to `localhost:8080`.
+
+---
+
+## 🏗️ Architecture
+
+```
+┌─────────────────────────────────────────────────┐
+│                  Browser (Frontend)              │
+│  Nginx · TypeScript · Vanilla CSS · Three.js    │
+│                                                  │
+│  Screens: Title → Starter → Overworld → Battle  │
+│  Overlays: Pokédex · Trainer Card · Region Map  │
+└───────────────────────┬─────────────────────────┘
+                        │  HTTP REST API
+┌───────────────────────┴─────────────────────────┐
+│                 Node.js Backend                  │
+│  Express · tsx · pokemon-showdown · @smogon/calc │
+│                                                  │
+│  Session → GameState → BattleBridge → AI Brain  │
+└───────────────────────┬─────────────────────────┘
+                        │  DATABASE_URL
+┌───────────────────────┴─────────────────────────┐
+│              PostgreSQL 15 (Docker)              │
+│           Save slots stored as JSON blobs        │
+└─────────────────────────────────────────────────┘
 ```
 
-Wild battle + catching (catching is synthetic — Showdown has no Poké Balls):
+### Key Directories
 
-```ts
-await bridge.startBattle(playerTeam, wildTeam, { formatid: 'gen9customgame', isWild: true });
-const result = bridge.attemptCatch('ultra'); // { caught, shakes }
-```
+| Path | Purpose |
+|---|---|
+| `server/` | Node.js backend — game session, save system, HTTP handler |
+| `src/game/` | Pure game logic — state, stats, items, leveling, economy |
+| `src/ai/` | AI decision brain, team composer, difficulty controller |
+| `src/bridge/` | Wrapper over Pokémon Showdown's battle engine |
+| `src/content/` | Region data — locations, trainers, gyms, encounter tables |
+| `web/` | Frontend — Vite + TypeScript, all screens and UI |
+| `web/overworld/` | 3D overworld renderer (Three.js) and map data |
+| `web/battle/` | Battle screen UI (DOM-based, sprite animations) |
+| `web/screens/` | Title, Starter, Pokédex, Shop, Trainer Card, Region Map |
 
-### How it works
+---
 
-- Drives Showdown via `getPlayerStreams(stream)` → `{ omniscient, p1, p2 }`.
-- Background loops consume each side's `|request|` (auto-resolving `teamPreview`/
-  `wait`) and the public battle log; `submitTurn` resolves on the next `|turn|`/`|win|`.
-- Catch-rate data is bundled in `src/data/catch-rates.ts` because Showdown's species
-  data has no catch rate (it's a competitive sim).
+## 🚀 Running Locally
 
-## AI Brain (sub-project 2a — decision core)
+### Requirements
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (includes Docker Compose)
 
-```ts
-import { chooseAction } from './src/ai/decision-brain';
-import { buildView } from './src/ai/view-from-bridge';
-import { makeRng } from './src/ai/rng';
-
-const ctx = {
-  gen: 9,
-  knobs: { randomness: 0, lookaheadDepth: 1, switchSmarts: 1 }, // "Hard"
-  personality: { aggression: 1, caution: 1 },
-  rng: makeRng(Date.now()),
-};
-const view = buildView('p2', bridge.state, aiTeam, playerTeam, bridge.getChoices('p2').moves, []);
-const action = chooseAction(view, ctx); // -> feed to bridge.submitTurn
-```
-
-Difficulty = knob values (randomness / lookaheadDepth / switchSmarts) via a
-`@smogon/calc` damage model; personality = weights. Learning/adaptation (player
-model) and team drafting arrive in plans 2b and 2c.
-
-## AI Brain (sub-project 2b — adaptation)
-
-```ts
-import { createPlayerModel } from './src/ai/player-model';
-import { observeBattle } from './src/ai/observer';
-import { computeSettings } from './src/ai/difficulty-controller';
-
-let model = createPlayerModel();             // persisted in the save
-model = observeBattle(model, battleSummary); // after each battle (only writer)
-
-const settings = computeSettings({
-  baseTier: 'hard', advancedToggle: false,
-  autoScale: 0,                                  // smoothed recent performance (-1..+1)
-  reputationRamp: model.reputation.score / 40,   // 0..1, earned over time
-});
-// settings -> Knobs for the decision brain; predictionWeight/counterDraftStrength
-// are gated to ~0 until the player has earned a reputation (the immersion guardrail).
-```
-
-## AI Brain (sub-project 2c — team composer)
-
-```ts
-import { composeTeam } from './src/ai/team-composer';
-import { makeRng } from './src/ai/rng';
-
-const gymTeam = composeTeam(
-  { baseTier: 'hard', teamSize: 6, levelCap: 50, gymType: 'Steel' },
-  { gen: 9, counterDraftStrength: 0.7, rng: makeRng(seed) },
-); // -> TeamSpec for the Battle Bridge
-```
-
-Every drafted mon's typing includes the gym type (dual-types allowed); movesets come
-from real legal movepools, tier-scaled; `counterDraftStrength` (from the difficulty
-controller) biases toward stronger mons. Deterministic under a seed.
-
-## Game State (sub-project 3a — core + save)
-
-```ts
-import { createNewGame, addToParty } from './src/game/game-state';
-import { createOwned } from './src/game/owned-pokemon';
-import { serialize, deserialize, InMemorySaveStore } from './src/game/save';
-import { ownedToSet } from './src/game/projection';
-
-let game = createNewGame({ difficultyMode: 'hard', nuzlocke: false });
-game = addToParty(game, createOwned({ species: 'Pikachu', level: 5, moves: ['thunderbolt'] }));
-
-const store = new InMemorySaveStore();
-await store.save('slot1', serialize(game));       // persist
-const loaded = deserialize((await store.load('slot1'))!);
-
-const battleTeam = loaded.party.map(ownedToSet);  // -> Battle Bridge
-```
-
-Full-fidelity owned Pokémon (stats validated vs `@smogon/calc`); HP/status persist
-between battles; save policy is anywhere (normal/hard) or Centers-only (hardest);
-Nuzlocke is an independent toggle enforced via `rules.ts` hooks.
-
-## Economy (sub-project 3b)
-
-```ts
-import { applyItem } from './src/game/items/effects';
-import { buyItem } from './src/game/shop';
-import { healParty } from './src/game/center';
-
-let r = buyItem(game, mart, 'ultraball', 5);   // shop
-r = { state: healParty(r.state), result: { ok: true } }; // Pokémon Center
-const used = applyItem(r.state, 'thunderstone', pikachuUid); // evolves -> Raichu
-```
-
-Full item roster with a data-driven effect engine; evolution (level + stone) and TM
-teaching from Showdown data; shops with badge-gated stock + difficulty pricing.
-Repel/Escape-Rope set state flags the overworld will honor (sub-project 4).
-
-## Rewards & Leveling (sub-project 3c)
-
-```ts
-import { applyBattleResult } from './src/game/battle-result';
-
-const fc = bridge.finalConditions();           // read end HP/status from the battle
-const { state, summary } = applyBattleResult(game, {
-  won: bridge.state.winner === 'p1',
-  finalConditions: myParty.map((m, i) => ({ uid: m.uid, hpPercent: fc.p1[i].hpPercent, status: fc.p1[i].status })),
-  defeatedTeam, participantUids, isWild: false, trainer, rng,
-});
-// summary: { expGained, levelUps (moves/evolution to resolve), money, items }
-```
-
-EXP scales to the opponent (Gen-5 formula); Exp Share is difficulty-dependent;
-level-ups surface move-learn/evolution decisions; HP/status persist in and out of
-battle via the Bridge's `initialConditions` / `finalConditions`.
-
-## Time & Rematch (sub-project 3d)
-
-```ts
-import { advanceStep, currentDay, timeOfDay } from './src/game/clock';
-import { recordTrainerDefeat, listReadyRematches, rematchLevelCap } from './src/game/rematch';
-
-game = advanceStep(game);                       // overworld step advances the clock
-game = recordTrainerDefeat(game, 'gymSteel');   // on a won trainer battle (1-day cooldown)
-const ready = listReadyRematches(game);         // Vs-Seeker list, after the cooldown
-const cap = rematchLevelCap(game);              // -> Team Composer levelCap for the rematch
-```
-
-Deterministic step-based clock with a `timeOfDay` hook for day/night encounters;
-player-initiated rematches scale to progress (capped at 75).
-
-## Region Content (sub-project 4b — full 8-badge region)
-
-The complete main path of The Mosaic: 8 type-locked gyms (Verdant Hollow → Shadowmere,
-caps 12→52), connecting routes with biome-appropriate encounter tables (the Convergence
-Tide), trainers, shops, and NPCs — 18 locations in one connected map. Factual species
-data (catch/exp/growth/EV for all 1025 species) is generated from PokéAPI by
-`scripts/gen-data.mjs`; region content is validated by `region-integrity.test.ts`.
-
-## Endgame (sub-project 4c — game logic complete)
-
-```ts
-import { startSequence, recordBattle, carryConditions } from './src/game/battle-sequence';
-import { nextBeat, resolveBeat, meterTier } from './src/game/story';
-import { availableEndings, applyEnding } from './src/game/ending';
-import { ELITE_FOUR, CHAMPION } from './src/content/elite/index';
-
-let seq = startSequence([...ELITE_FOUR, CHAMPION], { itemsAllowed: difficulty !== 'hardest' });
-// drive each battle via the Bridge using carryConditions(party) as initialConditions...
-const endings = availableEndings(state);            // gated by the stabilize meter
-const { state: ended } = applyEnding(state, choice); // reset wipes your convergence-born team
-```
-
-A no-heal battle-sequence gauntlet (Vriska's 3 rooms / Elite Four / the Warden's
-6 legendaries), a stabilize meter driven by 5 faction story beats, and the
-Reset/Embrace/Balance ending. **This completes the entire game logic** — every system
-(battles, adaptive AI, full-fidelity Pokémon, economy, progression, the full region,
-and the endgame) is built and tested headlessly. Only presentation (sub-project 5,
-the Three.js front-end) remains.
-
-## Commands
+### Quick Start
 
 ```bash
-npm test        # run the full vitest suite
-npm run typecheck
+git clone https://github.com/YOUR_USERNAME/YOUR_REPO_NAME
+cd YOUR_REPO_NAME
+docker-compose up --build
 ```
+
+Then open your browser to **http://localhost:8080**
+
+> ⚠️ **Note:** The `sprites-master` directory (Pokémon Showdown sprite assets, ~200MB) is not included in this repo. You will need to download it from the [PokeAPI sprites repository](https://github.com/PokeAPI/sprites) and place it at the root of the project. Battles and the Starter Screen will gracefully fall back to static `.png` sprites if animated `.gif` files are missing.
+
+### Development Mode (Hot Reload)
+
+```bash
+npm install
+npm run dev       # starts the backend server + Vite dev server concurrently
+```
+
+Then open **http://localhost:5173**
+
+---
+
+## 🗂️ Progress (v1)
+
+### ✅ Complete
+- [x] Battle engine integration (Pokémon Showdown)
+- [x] Full game state (party, items, money, Pokédex, save/load)
+- [x] Adaptive AI — decision brain + team composer + difficulty scaling
+- [x] Economy — shops, bag, Pokémon Center healing, badge-gated stock
+- [x] Leveling, EXP, level-ups, move learning, evolution
+- [x] Full 8-badge region with 14 maps, encounter tables, and trainers
+- [x] Day/night cycle affecting wild encounters
+- [x] Vs-Seeker trainer rematches
+- [x] Title screen with "New Game" / "Continue" / "Options"
+- [x] **Randomized starter selection** (no same-type repeats, all 3-stage evolution lines)
+- [x] Pokédex screen
+- [x] Trainer Card screen
+- [x] Region Map screen
+- [x] Shop UI
+- [x] Pokémon Center overlay
+- [x] Overworld movement with tile-based map transitions
+- [x] Wild battle encounters in tall grass
+- [x] Catching Pokémon with Poké Balls
+- [x] PostgreSQL save system + Docker Compose deployment
+- [x] Pixel-art sprite animations in battle (`.gif` with `.png` fallback)
+
+### 🔜 Planned (v2+)
+- [ ] Sound effects and background music
+- [ ] Move animations in battle
+- [ ] Full Elite Four / Champion sequence
+- [ ] Story dialogue and NPC cutscenes
+- [ ] Player character sprite in the overworld
+- [ ] Mobile / touch controls
+- [ ] Nuzlocke mode
+- [ ] Online leaderboard / Pokédex completion tracking
+
+---
+
+## 🙏 Credits
+
+This game would not exist without these open-source projects:
+
+| Project | Usage |
+|---|---|
+| [Pokémon Showdown](https://github.com/smogon/pokemon-showdown) | Battle simulation engine |
+| [@smogon/calc](https://github.com/smogon/damage-calc) | Damage calculation for AI |
+| [PokeAPI Sprites](https://github.com/PokeAPI/sprites) | Pixel-art Pokémon sprites |
+| [Three.js](https://threejs.org/) | 3D overworld rendering |
+| [Vite](https://vitejs.dev/) | Frontend build tooling |
+| [KayKit Adventurers](https://kaylousberg.itch.io/kaykit-adventurers) | CC0 3D character assets |
+| [Kenney Fantasy Town Kit](https://kenney.nl/assets/fantasy-town-kit) | CC0 3D environment assets |
+
+> Pokémon and all related names are trademarks of Nintendo / Game Freak. This is a fan project, non-commercial, built for educational and experimental purposes.
+
+---
+
+## 📄 License
+
+MIT — see [LICENSE](LICENSE)

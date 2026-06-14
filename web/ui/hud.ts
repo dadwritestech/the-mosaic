@@ -3,7 +3,7 @@ export interface HudSwitch { index: number; species: string; level: number; hpPe
 export interface HudBall { ballType: string; name: string; count: number; }
 export interface HudHandlers { onMove: (serverIndex: number) => void; onSwitch: (index: number) => void; onBall: (ballType: string) => void; }
 export interface HudSide { name: string; hp: number; status: string; boosts: Record<string, number>; volatiles: string[]; item?: string; }
-export interface HudState { self: HudSide; foe: HudSide; weather: string; terrain: string; moves: HudMove[]; switches: HudSwitch[]; balls: HudBall[]; canCatch: boolean; log: string; }
+export interface HudState { self: HudSide; foe: HudSide; weather: string; terrain: string; moves: HudMove[]; switches: HudSwitch[]; balls: HudBall[]; canCatch: boolean; log: string; forceSwitch?: boolean; }
 
 const STATUS_LABEL: Record<string, string> = { par: 'PAR', psn: 'PSN', tox: 'TOX', brn: 'BRN', slp: 'SLP', frz: 'FRZ' };
 const STATUS_COLOR: Record<string, string> = { par: '#d8a200', psn: '#9a3fb0', tox: '#7a2a8f', brn: '#d8642a', slp: '#7a8694', frz: '#37b0d8' };
@@ -107,9 +107,10 @@ export class Hud {
     return box;
   }
 
-  private switchPanel(o: HudState): HTMLElement {
+  private switchPanel(o: HudState, forced: boolean): HTMLElement {
     const box = el('div', 'hud-glass', 'border-radius:14px;margin-bottom:11px;padding:11px;display:flex;gap:10px;flex-wrap:wrap');
-    box.appendChild(el('div', '', 'width:100%;font-size:12px;font-weight:600;color:#9fb3d1;letter-spacing:.3px', 'SWITCH TO'));
+    const label = forced ? 'CHOOSE A REPLACEMENT' : 'SWITCH TO';
+    box.appendChild(el('div', '', 'width:100%;font-size:12px;font-weight:600;color:#9fb3d1;letter-spacing:.3px', label));
     o.switches.forEach((s) => {
       const b = el('button', 'hud-switch-card', s.fainted ? 'background:rgba(58,58,68,.8);cursor:not-allowed;opacity:.5' : '');
       const top = el('div', '', 'display:flex;justify-content:space-between;gap:10px;font-size:13px;font-weight:700');
@@ -125,6 +126,10 @@ export class Hud {
 
   render(o: HudState) {
     this.last = o;
+    const forced = !!o.forceSwitch;
+    // If a forced switch is needed, open the switch panel automatically
+    if (forced) this.showSwitch = true;
+
     const children: HTMLElement[] = [this.bar(o.foe, 'top:18px;left:18px'), this.bar(o.self, 'bottom:182px;right:18px')];
     const fieldBits = [o.weather, o.terrain].filter(Boolean).join(' · ');
     if (fieldBits) children.push(el('div', 'hud-glass hud-field', '', fieldBits));
@@ -132,29 +137,32 @@ export class Hud {
     const panel = el('div', 'hud-glass hud-panel', '');
     panel.appendChild(el('div', 'hud-log', '', o.log));
 
-    if (this.showSwitch && o.switches.length) panel.appendChild(this.switchPanel(o));
+    if (this.showSwitch && o.switches.length) panel.appendChild(this.switchPanel(o, forced));
 
-    const grid = el('div', 'hud-moves', '');
-    o.moves.forEach((m) => {
-      const color = TYPE_COLOR[m.type ?? ''] ?? '#6b7280';
-      const b = el('button', 'hud-move', `pointer-events:auto;background:linear-gradient(150deg,${color},${shade(color, 0.32)})`);
-      b.appendChild(el('span', 'hud-move-name', '', m.name));
-      const sub = el('div', 'hud-move-sub', '');
-      sub.appendChild(el('span', 'hud-pill', '', (m.type ?? '').toUpperCase()));
-      if (m.pp !== undefined) sub.appendChild(el('span', 'hud-pp', '', `${m.pp}/${m.maxpp}`));
-      b.appendChild(sub);
-      b.addEventListener('click', () => this.handlers.onMove(m.index));
-      grid.appendChild(b);
-    });
-    panel.appendChild(grid);
+    // Hide move buttons entirely when a forced switch must be made
+    if (!forced) {
+      const grid = el('div', 'hud-moves', '');
+      o.moves.forEach((m) => {
+        const color = TYPE_COLOR[m.type ?? ''] ?? '#6b7280';
+        const b = el('button', 'hud-move', `pointer-events:auto;background:linear-gradient(150deg,${color},${shade(color, 0.32)})`);
+        b.appendChild(el('span', 'hud-move-name', '', m.name));
+        const sub = el('div', 'hud-move-sub', '');
+        sub.appendChild(el('span', 'hud-pill', '', (m.type ?? '').toUpperCase()));
+        if (m.pp !== undefined) sub.appendChild(el('span', 'hud-pp', '', `${m.pp}/${m.maxpp}`));
+        b.appendChild(sub);
+        b.addEventListener('click', () => this.handlers.onMove(m.index));
+        grid.appendChild(b);
+      });
+      panel.appendChild(grid);
+    }
 
     const actions = el('div', 'hud-actions', '');
-    if (o.switches.length) {
+    if (o.switches.length && !forced) {
       const sw = el('button', 'hud-btn', `pointer-events:auto;background:${this.showSwitch ? 'linear-gradient(135deg,#6aa0e8,#4f86d8)' : 'linear-gradient(135deg,#3a5a8c,#314f86)'}`, this.showSwitch ? 'Cancel' : 'Switch ⮂');
       sw.addEventListener('click', () => { this.showSwitch = !this.showSwitch; this.render(this.last!); });
       actions.appendChild(sw);
     }
-    if (o.canCatch) {
+    if (o.canCatch && !forced) {
       o.balls.forEach((ball) => {
         const cb = el('button', 'hud-btn', 'pointer-events:auto;background:linear-gradient(135deg,#ffe08a,#f5c04a);color:#3a2c00', `Throw ${ball.name} (${ball.count})`);
         cb.addEventListener('click', () => this.handlers.onBall(ball.ballType));

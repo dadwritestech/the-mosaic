@@ -1,5 +1,5 @@
 import { api } from './net';
-import { OverworldScreen3D } from './overworld/overworld3d';
+import { OverworldScreen } from './overworld/overworld-screen';
 import { BattleScreen } from './battle/battle-screen';
 import { Menu } from './ui/menu';
 import { Sidebar } from './ui/sidebar';
@@ -9,6 +9,7 @@ import { TrainerCardScreen } from './screens/trainercard';
 import { PokedexScreen } from './screens/pokedex';
 import { ShopScreen } from './screens/shop';
 import { RegionMapScreen } from './screens/regionmap';
+import { StarterScreen } from './screens/starter';
 
 const root = document.getElementById('game')!;
 
@@ -24,6 +25,7 @@ let trainerCardScreen: TrainerCardScreen | null = null;
 let pokedexScreen: PokedexScreen | null = null;
 let shopScreen: ShopScreen | null = null;
 let regionMapScreen: RegionMapScreen | null = null;
+let starterScreen: StarterScreen | null = null;
 
 async function send(cmd: string, body: Record<string, unknown> = {}) {
   if (busy) return;
@@ -38,7 +40,7 @@ async function send(cmd: string, body: Record<string, unknown> = {}) {
   try { render(await api(cmd, body)); } finally { busy = false; }
 }
 
-const overworld = new OverworldScreen3D(root, (dir) => send('move', { dir }));
+const overworld = new OverworldScreen(root, (dir) => send('move', { dir }));
 const menu = new Menu(root, (cmd, body) => send(cmd, body));
 const sidebar = new Sidebar(root);
 
@@ -68,6 +70,7 @@ function hideMetaScreens(): void {
   pokedexScreen?.hide();
   shopScreen?.hide();
   regionMapScreen?.hide();
+  starterScreen?.hide();
 }
 
 function render(view: any) {
@@ -98,6 +101,15 @@ function render(view: any) {
     if (!titleScreen) titleScreen = new TitleScreen(root, (cmd, body) => send(cmd, body ?? {}));
     titleScreen.show();
     titleScreen.render(view);
+    return;
+  }
+
+  /* ---- starter selection ---- */
+  if (view.screen === 'starter') {
+    hideAll();
+    if (!starterScreen) starterScreen = new StarterScreen(root, (cmd, body) => send(cmd, body ?? {}));
+    starterScreen.show();
+    starterScreen.render(view);
     return;
   }
 

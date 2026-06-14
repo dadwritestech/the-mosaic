@@ -3,8 +3,10 @@ import { setHp } from './owned-pokemon';
 import { maxHp } from './stats';
 import { applyFaintConsequences } from './rules';
 import { distributeExp, applyExpGain, type LevelUpResult } from './leveling';
+import * as Sim from 'pokemon-showdown';
+import { evolve } from './evolution';
 import { computeRewards } from './rewards';
-import { addMoney, addItem } from './game-state';
+import { addMoney, addItem, registerCaught } from './game-state';
 import { getItem } from './items/catalog';
 
 export interface BattleOutcome {
@@ -43,7 +45,12 @@ export function applyBattleResult(state: GameState, outcome: BattleOutcome): { s
       const amt = dist.get(mon.uid) ?? 0;
       expGained.set(mon.uid, amt);
       if (amt <= 0) return mon;
-      const r = applyExpGain(mon, amt);
+      let r = applyExpGain(mon, amt);
+      if (r.evolutionInto) {
+        r.mon = evolve(r.mon, r.evolutionInto);
+        const dexNum = (Sim.Dex as any).forGen(9).species.get(r.evolutionInto)?.num;
+        if (dexNum) s = registerCaught(s, dexNum);
+      }
       if (r.levelsGained > 0 || r.evolutionInto) levelUps.push({ uid: mon.uid, levelsGained: r.levelsGained, movesToLearn: r.movesToLearn, evolutionInto: r.evolutionInto });
       return r.mon;
     });
