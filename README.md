@@ -180,6 +180,16 @@ This game would not exist without these open-source projects:
 
 ---
 
+## ⚖️ Legal Disclaimer
+
+**Pokémon** and all related names, characters, and media are trademarks of **Nintendo**, **Game Freak**, and **The Pokémon Company**. This project is **not affiliated with, endorsed by, or sponsored by** Nintendo, Game Freak, or The Pokémon Company in any way.
+
+This is a **non-commercial fan project** created purely for educational and experimental purposes — specifically to explore what's possible when building a game entirely with AI coding assistance. No money is made from this project. No official Pokémon assets (sprites, music, or ROMs) are distributed in this repository.
+
+Please support the official games! 🎮
+
+---
+
 ## 📄 License
 
 MIT — see [LICENSE](LICENSE)
