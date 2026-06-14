@@ -2,8 +2,6 @@
 
 > **v1.0** — A fully playable browser-based Pokémon RPG built entirely with AI assistance, powered by the Pokémon Showdown battle engine.
 
-![Title Screen](docs/screenshots/title.png)
-
 ---
 
 ## 🤖 How This Was Built
